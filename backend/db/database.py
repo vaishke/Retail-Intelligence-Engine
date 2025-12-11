@@ -12,3 +12,4 @@ db = client[DB_NAME]
 
 products_collection = db["products"]
 orders_collection = db["orders"]
+inventory_collection = db["inventory"]
