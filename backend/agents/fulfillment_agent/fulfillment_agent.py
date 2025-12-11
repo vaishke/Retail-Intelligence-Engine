@@ -1,5 +1,5 @@
 # fulfillment_agent.py
-from database import orders_collection, products_collection
+from backend.db.database import orders_collection, products_collection
 import datetime
 
 # --- Mock Inventory Agent ---

@@ -1,4 +1,5 @@
-from fulfillment_agent import FulfillmentAgent
+from backend.agents.fulfillment_agent.fulfillment_agent import FulfillmentAgent
+
 
 agent = FulfillmentAgent()
 
