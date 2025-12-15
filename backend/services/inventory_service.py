@@ -1,7 +1,7 @@
-from ..agents.inventory_agent import InventoryAgent
+from agents.inventory_agent import InventoryAgent
 
 class InventoryService:
-    
+
     @staticmethod
     def check_stock_service(sku, userLocation):
         input_json = {
