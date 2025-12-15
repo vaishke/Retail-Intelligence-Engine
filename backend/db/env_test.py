@@ -13,9 +13,14 @@ if not MONGO_URI or not DB_NAME:
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 
+print("MONGO_URI =", MONGO_URI)
+print("DB_NAME =", DB_NAME)
+
 products_collection = db["products"]
 orders_collection = db["orders"]
 payments_collection = db["payments"]
 loyalty_collection = db["loyalty"]
 users_collection = db["users"]
 offers_collection = db["offers"]
+
+
