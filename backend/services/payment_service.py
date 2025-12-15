@@ -1,4 +1,4 @@
-from backend.agents.payment_agent import PaymentAgent
+from agents.payment_agent import PaymentAgent
 
 agent = PaymentAgent()
 
