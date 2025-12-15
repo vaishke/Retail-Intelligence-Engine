@@ -1,4 +1,4 @@
-from agents.loyalty_agent.offer_loyalty_agent import OfferLoyaltyAgent
+from backend.agents.offer_loyalty_agent import OfferLoyaltyAgent
 
 class OfferLoyaltyService:
     agent = OfferLoyaltyAgent()
