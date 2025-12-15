@@ -2,44 +2,63 @@ from db.database import payments_collection
 import datetime
 import uuid
 
+
 class PaymentAgent:
-    def __init__(self):
-        pass
 
-    def process_payment(self, payment_request):
+    def process_payment(self, order_id, payment_method, details=None):
         """
-        Expected input format:
-        {
-            "order_id": "ORD001",
-            "user_id": "USER01",
-            "amount": 5000,
-            "payment_method": "card / wallet / upi",
-            "details": { ... }  # card or UPI info
-        }
+        Fetch order from DB → process payment → save payment record
         """
 
-        # 🔹 Generate Transaction ID
+        # 1️⃣ Fetch order from DB
+        order = orders_collection.find_one({"order_id": order_id})
+
+        if not order:
+            return {
+                "success": False,
+                "message": "Order not found"
+            }
+
+        if order.get("status") == "paid":
+            return {
+                "success": False,
+                "message": "Order already paid"
+            }
+
+        amount = order["final_amount"]
+        user_id = order["user_id"]
+
+        # 2️⃣ Generate transaction ID
         transaction_id = str(uuid.uuid4())
 
-        # 🔹 Simulate payment processing (mock or real gateway)
-        success = True  # Replace with real API logic later
+        # 3️⃣ Simulate payment gateway
+        success = True   # Replace later with Razorpay / Stripe / etc.
 
-        # 📝 Save record
-        record = {
+        # 4️⃣ Save payment record
+        payment_record = {
             "transaction_id": transaction_id,
-            "order_id": payment_request["order_id"],
-            "user_id": payment_request["user_id"],
-            "amount": payment_request["amount"],
-            "payment_method": payment_request["payment_method"],
+            "order_id": order_id,
+            "user_id": user_id,
+            "amount": amount,
+            "payment_method": payment_method,
             "status": "success" if success else "failed",
-            "timestamp": datetime.datetime.utcnow()
+            "created_at": datetime.datetime.utcnow()
         }
-        payments_collection.insert_one(record)
 
-        # ✅ Return response
+        payments_collection.insert_one(payment_record)
+
+        # 5️⃣ Update order status
+        if success:
+            orders_collection.update_one(
+                {"order_id": order_id},
+                {"$set": {"status": "paid"}}
+            )
+
+        # 6️⃣ Return response
         return {
+            "success": success,
             "transaction_id": transaction_id,
-            "order_id": payment_request["order_id"],
-            "status": "success" if success else "failed",
-            "message": "Payment completed" if success else "Payment failed"
+            "order_id": order_id,
+            "amount": amount,
+            "message": "Payment successful" if success else "Payment failed"
         }
