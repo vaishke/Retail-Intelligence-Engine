@@ -1,4 +1,4 @@
-from backend.db.database import users_collection, offers_collection, orders_collection
+from db.database import users_collection, offers_collection, orders_collection
 from datetime import datetime
 
 

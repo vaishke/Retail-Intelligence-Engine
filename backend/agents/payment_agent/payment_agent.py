@@ -1,4 +1,4 @@
-from backend.db.database import payments_collection
+from db.database import payments_collection
 import datetime
 import uuid
 
