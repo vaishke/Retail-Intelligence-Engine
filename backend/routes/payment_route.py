@@ -8,7 +8,7 @@ router = APIRouter(
 
 @router.post("/process")
 def process_payment(data: dict = Body(...)):
-    required_fields = ["order_id", "user_id", "amount", "payment_method"]
+    required_fields = ["order_id", "payment_method"]
     missing = [f for f in required_fields if f not in data]
 
     if missing:

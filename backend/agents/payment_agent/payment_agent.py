@@ -10,7 +10,7 @@ class PaymentAgent:
         Fetch order from DB → process payment → save payment record
         """
 
-        # 1️⃣ Fetch order from DB
+        #Fetch order from DB
         order = orders_collection.find_one({"order_id": order_id})
 
         if not order:
@@ -28,13 +28,13 @@ class PaymentAgent:
         amount = order["final_amount"]
         user_id = order["user_id"]
 
-        # 2️⃣ Generate transaction ID
+        #Generate transaction ID
         transaction_id = str(uuid.uuid4())
 
-        # 3️⃣ Simulate payment gateway
+        #Simulate payment gateway
         success = True   # Replace later with Razorpay / Stripe / etc.
 
-        # 4️⃣ Save payment record
+        #Save payment record
         payment_record = {
             "transaction_id": transaction_id,
             "order_id": order_id,
@@ -47,14 +47,14 @@ class PaymentAgent:
 
         payments_collection.insert_one(payment_record)
 
-        # 5️⃣ Update order status
+        # Update order status
         if success:
             orders_collection.update_one(
                 {"order_id": order_id},
                 {"$set": {"status": "paid"}}
             )
 
-        # 6️⃣ Return response
+        # Return response
         return {
             "success": success,
             "transaction_id": transaction_id,
