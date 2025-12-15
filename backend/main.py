@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from routes.inventory_routes import router as inventory_router
+from routes.offer_loyalty_routes import router as offer_router
+
+
 
 app = FastAPI(
     title="Retail Agentic AI Backend",
@@ -9,3 +12,4 @@ app = FastAPI(
 
 # Register routers
 app.include_router(inventory_router)
+app.include_router(offer_router)
