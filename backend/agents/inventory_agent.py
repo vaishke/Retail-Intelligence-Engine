@@ -1,5 +1,5 @@
 
-from ..db.database import inventory_collection
+from db.database import inventory_collection
 class InventoryAgent:
 
     @staticmethod
