@@ -3,6 +3,7 @@ from routes.inventory_routes import router as inventory_router
 from routes.offer_loyalty_routes import router as offer_router
 from routes.payment_route import router as payment_router
 from routes.recommendation_routes import router as recommendation_router
+from routes.post_purchase_route import router as post_purchase_router
 
 app = FastAPI(
     title="Retail Agentic AI Backend",
@@ -15,3 +16,4 @@ app.include_router(inventory_router)
 app.include_router(offer_router)
 app.include_router(payment_router)
 app.include_router(recommendation_router)
+app.include_router(post_purchase_router)
