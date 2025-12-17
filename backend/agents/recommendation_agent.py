@@ -1,127 +1,123 @@
-from db.database import users_collection, sessions_collection, products_collection
+from db.database import users_collection, products_collection
 
 
 class RecommendationAgent:
 
     @staticmethod
-    def recommend_products(user_id, session_id, constraints, top_k=5):
+    def recommend_products(user_id, constraints, top_k=5, exclude_product_ids=None):
         user = users_collection.find_one({"_id": user_id})
-        session = sessions_collection.find_one({"_id": session_id})
 
-        if not user or not session:
+        if not user:
             return {
-                "status": "error",
-                "message": "Invalid user or session"
+                "success": False,
+                "reason": "INVALID_USER",
+                "recommendations": []
             }
 
-        query = RecommendationAgent._build_query(constraints, user)
-        excluded = session.get("context", {}).get("selected_products", [])
+        query = RecommendationAgent._build_query(constraints)
 
-        if excluded:
-            query["_id"] = {"$nin": excluded}
+        if exclude_product_ids:
+            query["_id"] = {"$nin": exclude_product_ids}
 
         products = list(products_collection.find(query))
 
         if not products:
             return {
-                "status": "no_results",
-                "message": "No products found matching your preferences",
-                "recommended_products": []
+                "success": False,
+                "reason": "NO_MATCHING_PRODUCTS",
+                "recommendations": []
             }
 
-        scored = RecommendationAgent._score_products(products, user)
+        scored = RecommendationAgent._score_products(products, constraints)
         top_products = scored[:top_k]
 
-        return {
-            "status": "success",
-            "recommended_products": top_products,
-            "applied_filters": constraints
+        applied_filters = {
+            k: constraints[k]
+            for k in ["category", "subcategory", "price_range"]
+            if k in constraints
         }
 
+        return {
+            "success": True,
+            "recommendations": top_products,
+            "applied_filters": applied_filters
+        }
 
     @staticmethod
-    def _build_query(constraints, user):
+    def _build_query(constraints):
         query = {}
-        prefs = user.get("preferences", {})
-
         if constraints.get("category"):
             query["category"] = constraints["category"]
 
         if constraints.get("subcategory"):
             query["subcategory"] = constraints["subcategory"]
 
-        price_range = constraints.get("price_range") or prefs.get("price_range")
-        if price_range:
-            query["price"] = {"$gte": price_range[0], "$lte": price_range[1]}
+        if constraints.get("price_range"):
+            query["price"] = {"$gte": constraints["price_range"][0],
+                              "$lte": constraints["price_range"][1]}
 
         if constraints.get("colors"):
             query["attributes.color"] = {"$in": constraints["colors"]}
 
-        if constraints.get("styles"):
-            query["tags"] = {"$in": constraints["styles"]}
+        if constraints.get("tags"):
+            query["tags"] = {"$in": constraints["tags"]}
 
         return query
 
-
     @staticmethod
-    def _score_products(products, user):
+    def _score_products(products, constraints):
         scored = []
-        prefs = user.get("preferences", {})
-        past_purchases = set(user.get("past_purchases", []))
 
         for product in products:
             score = 0
             signals = []
 
-            if product.get("attributes", {}).get("color") in prefs.get("colors", []):
+            # Category/Subcategory match
+            if product.get("category") == constraints.get("category"):
+                score += 3
+                signals.append("CATEGORY_MATCH")
+
+            if product.get("subcategory") == constraints.get("subcategory"):
                 score += 2
-                signals.append("color_match")
+                signals.append("SUBCATEGORY_MATCH")
 
-            if set(product.get("tags", [])).intersection(set(prefs.get("styles", []))):
+            # Tag match
+            if set(product.get("tags", [])).intersection(set(constraints.get("tags", []))):
                 score += 2
-                signals.append("style_match")
+                signals.append("TAG_MATCH")
 
-            if product.get("_id") in past_purchases:
-                score += 1
-                signals.append("past_purchase")
-
-            rating = product.get("ratings", 0)
-            score += rating * 0.5
+            # Popularity (rating)
+            rating = product.get("rating", 0)
+            score += rating
             if rating >= 4:
-                signals.append("high_rating")
+                signals.append("POPULAR")
 
             scored.append({
                 "product_id": product.get("_id"),
                 "name": product.get("name"),
+                "category": product.get("category"),
+                "subcategory": product.get("subcategory"),
                 "price": product.get("price"),
+                "rating": rating,
+                "image": product.get("image"),
                 "score": round(score, 2),
-                "matched_signals": signals,
+                "signals": signals,
                 "reason": RecommendationAgent._build_reason(signals)
             })
 
         return sorted(scored, key=lambda x: x["score"], reverse=True)
 
-
     @staticmethod
     def _build_reason(signals):
         if not signals:
             return "Popular product among users"
-        return "Recommended based on your preferences"
-
+        return "Matches your selected category and budget"
 
     @staticmethod
     def handle_request(recommendation_request):
-        action = recommendation_request.get("action")
-
-        if action == "recommend":
-            return RecommendationAgent.recommend_products(
-                user_id=recommendation_request.get("user_id"),
-                session_id=recommendation_request.get("session_id"),
-                constraints=recommendation_request.get("constraints", {}),
-                top_k=recommendation_request.get("top_k", 5)
-            )
-
-        return {
-            "status": "error",
-            "message": f"Invalid action '{action}'"
-        }
+        return RecommendationAgent.recommend_products(
+            user_id=recommendation_request.get("user_id"),
+            constraints=recommendation_request.get("constraints", {}),
+            top_k=recommendation_request.get("top_k", 5),
+            exclude_product_ids=recommendation_request.get("exclude_product_ids", [])
+        )
