@@ -1,4 +1,4 @@
-from backend.db.database import orders_collection, products_collection
+from db.database import orders_collection, products_collection
 from datetime import datetime
 
 class FulfillmentAgent:

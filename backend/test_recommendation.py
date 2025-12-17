@@ -1,25 +1,15 @@
-from services.recommendation_service import RecommendationService
+from sales_graph.graph import build_sales_graph
 
-TEST_USER_ID = "test_user_001"
-TEST_SESSION_ID = "test_session_001"
+app = build_sales_graph()
 
-def run_test():
-    constraints = {
-        "category": "Apparel",
-        "price_range": [500, 2500],
-        "colors": ["black", "blue"]
+initial_state = {
+    "user_id": "USER123",
+    "constraints": {
+        "category": "WOMEN",
+        "subcategory": "TOPS",
+        "price_range": [1000, 2000]
     }
+}
 
-    response = RecommendationService.recommend_service(
-        user_id=TEST_USER_ID,
-        session_id=TEST_SESSION_ID,
-        constraints=constraints,
-        top_k=3
-    )
-
-    print("\n=== Recommendation Service Output ===")
-    print(response)
-
-
-if __name__ == "__main__":
-    run_test()
+result = app.invoke(initial_state)
+print(result)
