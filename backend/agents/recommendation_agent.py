@@ -1,10 +1,13 @@
+from bson import ObjectId
 from db.database import users_collection, products_collection
+
 
 class RecommendationAgent:
 
     @staticmethod
     def recommend_products(user_id, constraints, top_k=5, exclude_product_ids=None):
-        user = users_collection.find_one({"_id": user_id})
+        user_oid = ObjectId(user_id)
+        user = users_collection.find_one({"_id": user_oid})
 
         if not user:
             return {
@@ -16,7 +19,9 @@ class RecommendationAgent:
         query = RecommendationAgent._build_query(constraints)
 
         if exclude_product_ids:
-            query["_id"] = {"$nin": exclude_product_ids}
+            # Ensure ObjectId for exclusion
+            exclude_oids = [ObjectId(pid) if not isinstance(pid, ObjectId) else pid for pid in exclude_product_ids]
+            query["_id"] = {"$nin": exclude_oids}
 
         products = list(products_collection.find(query))
 
@@ -52,8 +57,10 @@ class RecommendationAgent:
             query["subcategory"] = constraints["subcategory"]
 
         if constraints.get("price_range"):
-            query["price"] = {"$gte": constraints["price_range"][0],
-                              "$lte": constraints["price_range"][1]}
+            query["price"] = {
+                "$gte": constraints["price_range"][0],
+                "$lte": constraints["price_range"][1]
+            }
 
         if constraints.get("colors"):
             query["attributes.color"] = {"$in": constraints["colors"]}
@@ -85,8 +92,8 @@ class RecommendationAgent:
                 score += 2
                 signals.append("TAG_MATCH")
 
-            # Popularity (rating)
-            rating = product.get("rating", 0)
+            # Popularity (ratings)
+            rating = product.get("ratings", 0)  # schema uses 'ratings'
             score += rating
             if rating >= 4:
                 signals.append("POPULAR")
@@ -97,8 +104,8 @@ class RecommendationAgent:
                 "category": product.get("category"),
                 "subcategory": product.get("subcategory"),
                 "price": product.get("price"),
-                "rating": rating,
-                "image": product.get("image"),
+                "ratings": rating,
+                "image": product.get("images")[0] if product.get("images") else None,
                 "score": round(score, 2),
                 "signals": signals,
                 "reason": RecommendationAgent._build_reason(signals)

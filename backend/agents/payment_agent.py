@@ -1,14 +1,19 @@
-from db.database import payments_collection, orders_collection
-import datetime
+from db.database import orders_collection
+from datetime import datetime
 import uuid
 
 
 class PaymentAgent:
 
     @staticmethod
-    def process_payment(order_id, payment_method, details=None):
-        # Fetch order
-        order = orders_collection.find_one({"order_id": order_id})
+    def process_payment(order_id: str, payment_method: str, details: dict = None):
+        """
+        Processes payment for an order.
+        Updates the order's 'payment' sub-document on success.
+        """
+
+        # Fetch the order
+        order = orders_collection.find_one({"_id": order_id})
 
         if not order:
             return {
@@ -17,41 +22,36 @@ class PaymentAgent:
                 "message": "Order not found"
             }
 
-        if order.get("status") == "paid":
+        # Check if already paid
+        if order.get("payment", {}).get("status") == "paid":
             return {
                 "success": False,
                 "order_id": order_id,
                 "message": "Order already paid"
             }
 
-        amount = order["final_amount"]
-        user_id = order["user_id"]
+        amount = order.get("final_price", 0)
+        user_id = order.get("user_id")
 
-        # Generate transaction ID
+        # Generate a transaction ID
         transaction_id = str(uuid.uuid4())
 
-        # Simulate payment gateway (replace with real gateway logic)
-        success = True  # or False if failure simulation
+        # Simulate payment gateway success/failure
+        success = True  # Change logic here if integrating real gateway
 
-        # Save payment record
-        payment_record = {
-            "transaction_id": transaction_id,
-            "order_id": order_id,
-            "user_id": user_id,
-            "amount": amount,
-            "payment_method": payment_method,
-            "status": "success" if success else "failed",
-            "details": details or {},
-            "created_at": datetime.datetime.utcnow()
-        }
-        payments_collection.insert_one(payment_record)
+        payment_status = "paid" if success else "failed"
 
-        # Update order status if payment succeeded
-        if success:
-            orders_collection.update_one(
-                {"order_id": order_id},
-                {"$set": {"status": "paid"}}
-            )
+        # Update the order's payment sub-document
+        orders_collection.update_one(
+            {"_id": order_id},
+            {"$set": {
+                "payment.status": payment_status,
+                "payment.method": payment_method,
+                "payment.transaction_id": transaction_id,
+                "payment.details": details or {},
+                "payment.updated_at": datetime.utcnow()
+            }}
+        )
 
         return {
             "success": success,

@@ -34,7 +34,7 @@
 ```json
 {
   "_id": "ObjectId",
-  "user_id": "String",
+  "user_id": ObjectId,
   "device": "String",
   "status": "String",
   "channel": "String",
@@ -86,7 +86,7 @@
 ```json
 {
   "_id": "ObjectId",
-  "product_id": "String",
+  "product_id": "ObjectId",
   "store_id": "String",
   "quantity": "Number",
   "last_updated": "Date"
@@ -98,11 +98,11 @@
 ```json
 {
   "_id": "ObjectId",
-  "user_id": "String",
-  "session_id": "String",
+  "user_id": "ObjectId",
+  "session_id": "ObjectId",
   "items": [
     {
-      "product_id": "String",
+      "product_id": "ObjectId",
       "qty": "Number",
       "price": "Number"
     }
@@ -118,13 +118,16 @@
   "payment": {
     "status": "String",
     "method": "String",
-    "transaction_id": "String"
+    "transaction_id": "String",
+    "updated_at": "Date"
   },
   "fulfillment": {
     "type": "String",
     "status": "String"
   },
-  "created_at": "Date"
+  "status": "String",          // added for order confirmation
+  "created_at": "Date",
+  "confirmed_at": "Date"
 }
 ```
 
@@ -148,8 +151,8 @@
 ```json
 {
   "_id": "ObjectId",
-  "order_id": "String",
-  "user_id": "String",
+  "order_id": "ObjectId",
+  "user_id": "ObjectId",
   "shipment_type": "String",
   "carrier": "String",
   "tracking_number": "String",
@@ -174,9 +177,9 @@
 ```json
 {
   "_id": "ObjectId",
-  "user_id": "String",
-  "order_id": "String",
-  "product_id": "String",
+  "user_id": "ObjectId",
+  "order_id": "ObjectId",
+  "product_id": "ObjectId",
   "agent_id": "String",
   "rating": "Number",
   "review_text": "String",
@@ -186,5 +189,36 @@
     "score": "Number",
     "label": "String"
   }
+}
+```
+
+## Invoices
+
+```json
+{
+  "_id": "ObjectId",
+  "order_id": "ObjectId",
+  "items": [
+    {
+      "product_id": "ObjectId",
+      "qty": "Number",
+      "price": "Number"
+    }
+  ],
+  "final_amount": "Number",
+  "issued_at": "Date"
+}
+```
+
+## Notifications
+
+```json
+{
+  "_id": "ObjectId",
+  "user_id": "ObjectId",        // references users._id
+  "type": "String",             // ORDER_CONFIRMED / SHIPMENT_UPDATE / OFFER etc.
+  "message": "String",
+  "read": "Boolean",
+  "created_at": "Date"
 }
 ```
