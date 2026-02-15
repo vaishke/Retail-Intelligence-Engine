@@ -1,6 +1,5 @@
 from db.database import users_collection, products_collection
 
-
 class RecommendationAgent:
 
     @staticmethod

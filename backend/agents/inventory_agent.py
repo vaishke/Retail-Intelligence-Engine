@@ -1,108 +1,69 @@
-from db.database import inventory_collection
+from db.database import inventory_collection, products_collection
 
 
 class InventoryAgent:
 
     @staticmethod
-    def check_stock(sku, userLocation):
-        record = inventory_collection.find_one({"sku": sku})
-        if not record:
+    def check_stock(product_id, userLocation=None):
+        records = list(inventory_collection.find({"product_id": str(product_id)}))
+
+        if not records:
             return {
                 "success": False,
                 "reason": "NOT_FOUND",
-                "sku": sku,
-                "productName": "",
+                "product_id": product_id,
                 "isAvailable": False
             }
 
-        online_stock = record.get("availableOnline", 0)
-        store_stock = record.get("storeStock", {}).get(userLocation, 0)
-        total_stock = online_stock + store_stock
+        total_quantity = sum(r.get("quantity", 0) for r in records)
 
-        if total_stock > 0:
-            return {
-                "success": True,
-                "sku": sku,
-                "productName": record.get("productName", ""),
-                "availableOnline": online_stock,
-                "storeStock": record.get("storeStock", {}),
-                "isAvailable": True
-            }
-        else:
-            alternatives = InventoryAgent.suggest_alternatives(record.get("category"), record.get("price", 0))
-            if alternatives.get("success"):
-                return alternatives
-            return {
-                "success": False,
-                "reason": "OUT_OF_STOCK",
-                "sku": sku,
-                "productName": record.get("productName", ""),
-                "isAvailable": False,
-                "message": "Item is currently unavailable."
-            }
+        location_quantity = 0
+        if userLocation:
+            location_quantity = sum(
+                r.get("quantity", 0) for r in records if r.get("store_id") == userLocation
+            )
 
-    @staticmethod
-    def suggest_alternatives(category, budget):
-        cursor = inventory_collection.find({"category": category})
-        alternatives = []
-
-        for product in cursor:
-            price = product.get("price", 0)
-            online_stock = product.get("availableOnline", 0)
-            if online_stock > 0 and price <= budget * 1.2:
-                alternatives.append({
-                    "sku": product.get("sku", ""),
-                    "productName": product.get("productName", ""),
-                    "price": price,
-                    "availableOnline": online_stock
-                })
-
-        alternatives.sort(key=lambda x: x["price"])
-        top_alternatives = alternatives[:3]
-
-        if top_alternatives:
-            return {
-                "success": True,
-                "category": category,
-                "budget": budget,
-                "alternatives": top_alternatives,
-                "isAvailable": True,
-                "message": f"Found {len(top_alternatives)} alternative(s)."
-            }
-        else:
-            return {
-                "success": False,
-                "reason": "NO_ALTERNATIVES",
-                "category": category,
-                "budget": budget,
-                "alternatives": [],
-                "isAvailable": False,
-                "message": "No suitable alternatives found."
-            }
-
-    @staticmethod
-    def get_store_stock(sku):
-        record = inventory_collection.find_one({"sku": sku})
-        if not record:
-            return {
-                "success": False,
-                "reason": "NOT_FOUND",
-                "sku": sku,
-                "productName": "",
-                "isAvailable": False
-            }
-
-        store_stock = record.get("storeStock", {})
-        online_stock = record.get("availableOnline", 0)
-        total_available = online_stock + sum(store_stock.values())
+        product = products_collection.find_one({"_id": product_id})
+        product_name = product.get("name") if product else ""
 
         return {
             "success": True,
-            "sku": sku,
-            "productName": record.get("productName", ""),
-            "availableOnline": online_stock,
+            "product_id": product_id,
+            "productName": product_name,
+            "totalStock": total_quantity,
+            "locationStock": location_quantity,
+            "isAvailable": total_quantity > 0
+        }
+
+    @staticmethod
+    def get_store_stock(product_id):
+        records = list(inventory_collection.find({"product_id": str(product_id)}))
+
+        if not records:
+            return {
+                "success": False,
+                "reason": "NOT_FOUND",
+                "product_id": product_id,
+                "isAvailable": False
+            }
+
+        store_stock = {
+            r["store_id"]: r.get("quantity", 0)
+            for r in records
+        }
+
+        total_quantity = sum(store_stock.values())
+
+        product = products_collection.find_one({"_id": product_id})
+        product_name = product.get("name") if product else ""
+
+        return {
+            "success": True,
+            "product_id": product_id,
+            "productName": product_name,
             "storeStock": store_stock,
-            "isAvailable": total_available > 0
+            "totalStock": total_quantity,
+            "isAvailable": total_quantity > 0
         }
 
     @staticmethod
@@ -111,18 +72,15 @@ class InventoryAgent:
 
         if action == "check_stock":
             return InventoryAgent.check_stock(
-                sku=inventory_request.get("sku"),
+                product_id=inventory_request.get("product_id"),
                 userLocation=inventory_request.get("userLocation")
             )
-        elif action == "suggest_alternatives":
-            return InventoryAgent.suggest_alternatives(
-                category=inventory_request.get("category"),
-                budget=inventory_request.get("budget")
-            )
+
         elif action == "get_store_stock":
             return InventoryAgent.get_store_stock(
-                sku=inventory_request.get("sku")
+                product_id=inventory_request.get("product_id")
             )
+
         else:
             return {
                 "success": False,
