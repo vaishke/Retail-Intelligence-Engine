@@ -1,164 +1,190 @@
-# Retail_AI Database Schema
+# Retail Intelligence Engine – Database Schema
 
-## users
-
+## Users
 ```json
 {
-  "_id": "USER123",
-  "name": "Ananya",
-  "email": "ananya@example.com",
-  "phone": "+91XXXXXXXXXX",
-  "loyalty_tier": "SILVER | GOLD | PLATINUM",
-  "created_at": "timestamp"
-}
-```
-
-## sessions
-
-```json
-{
-  "_id": "SESSION123",
-  "user_id": "USER123",
-  "active_channel": "WEB | MOBILE | KIOSK | WHATSAPP | VOICE",
-  "context": {
-    "intent": "BROWSE | PURCHASE | RETURN",
-    "current_category": "WOMEN_TOPS",
-    "selected_products": ["SKU123"],
-    "cart_order_id": "ORD456",
-    "last_agent": "RECOMMENDATION",
-    "last_step": "STOCK_CONFIRMED"
+  "_id": "ObjectId",
+  "name": "String",
+  "email": "String",
+  "password_hash": "String",
+  "gender": "String",
+  "location": "String",
+  "preferences": {
+    "styles": ["String"],
+    "colors": ["String"],
+    "price_range": ["Number", "Number"]
   },
-  "channel_history": [
-    { "channel": "MOBILE", "at": "timestamp" },
-    { "channel": "KIOSK", "at": "timestamp" }
-  ],
-  "updated_at": "timestamp"
-}
-
-```
-
-## products
-
-```json
-{
-  "_id": "SKU123",
-  "name": "Cotton Kurti",
-  "category": "WOMEN",
-  "subcategory": "TOPS",
-  "attributes": {
-    "color": "BLUE",
-    "size": ["S", "M", "L"]
+  "loyalty": {
+    "tier": "String",
+    "points": "Number"
   },
-  "tags": ["ETHNIC", "CASUAL"],
-  "price": 1499,
-  "rating": 4.3,
-  "images": ["url1"],
-  "active": true
-}
-```
-
-## inventory
-
-```json
-{
-  "_id": "INV123",
-  "product_id": "SKU123",
-  "location": "WAREHOUSE | STORE_001",
-  "available_qty": 12,
-  "last_updated": "timestamp"
-}
-```
-
-## orders
-
-```json
-{
-  "_id": "ORD456",
-  "user_id": "USER123",
-  "items": [
+  "past_purchases": ["String"],
+  "payment_methods": [
     {
-      "product_id": "SKU123",
-      "qty": 1,
-      "price": 1499
+      "type": "String",
+      "details": "String",
+      "expiry_date": "String"
     }
   ],
-  "subtotal": 1499,
-  "discount": 200,
-  "final_amount": 1299,
-  "status": "CREATED | PAYMENT_PENDING | PAID | CONFIRMED | FULFILLED | CLOSED",
-  "fulfillment_type": "SHIP_TO_HOME | CLICK_AND_COLLECT | TRY_IN_STORE",
-  "created_at": "timestamp"
+  "created_at": "Date"
 }
 ```
 
-## payments
+## Sessions
+```json
+{
+  "_id": "ObjectId",
+  "user_id": "String",
+  "device": "String",
+  "status": "String",
+  "channel": "String",
+  "chat_history": [
+    {
+      "role": "String",
+      "message": "String",
+      "timestamp": "Date"
+    }
+  ],
+  "context": {
+    "current_intent": "String",
+    "selected_products": ["String"]
+  },
+  "created_at": "Date"
+}
+```
+
+## Products
 
 ```json
 {
-  "_id": "PAY123",
-  "order_id": "ORD456",
-  "method": "UPI | CARD | GIFT_CARD | POS",
-  "amount": 1299,
-  "status": "SUCCESS | FAILED | PENDING",
-  "transaction_ref": "TXN789",
-  "timestamp": "timestamp"
+  "_id": "ObjectId",
+  "name": "String",
+  "category": "String",
+  "subcategory": "String",
+  "price": "Number",
+  "description": "String",
+  "images": ["String"],
+  "attributes": {
+    "color": "String",
+    "material": "String",
+    "size_available": ["String"]
+  },
+  "ratings": "Number",
+  "tags": ["String"],
+  "available_stores": [
+    {
+      "store_id": "String",
+      "stock": "Number"
+    }
+  ],
+  "created_at": "Date"
 }
 ```
 
-## offers
+## Inventory
 
 ```json
 {
-  "_id": "OFF123",
-  "type": "PERCENTAGE | FLAT",
-  "value": 10,
-  "applicable_categories": ["WOMEN"],
-  "valid_until": "timestamp"
+  "_id": "ObjectId",
+  "product_id": "String",
+  "store_id": "String",
+  "quantity": "Number",
+  "last_updated": "Date"
 }
 ```
 
-## loyalty
+## Orders
 
 ```json
 {
-  "_id": "LOY123",
-  "user_id": "USER123",
-  "points": 320,
-  "last_updated": "timestamp"
+  "_id": "ObjectId",
+  "user_id": "String",
+  "session_id": "String",
+  "items": [
+    {
+      "product_id": "String",
+      "qty": "Number",
+      "price": "Number"
+    }
+  ],
+  "discounts_applied": [
+    {
+      "type": "String",
+      "code": "String",
+      "amount": "Number"
+    }
+  ],
+  "final_price": "Number",
+  "payment": {
+    "status": "String",
+    "method": "String",
+    "transaction_id": "String"
+  },
+  "fulfillment": {
+    "type": "String",
+    "status": "String"
+  },
+  "created_at": "Date"
 }
 ```
 
-## shipments
+## Offers
 
 ```json
 {
-  "_id": "SHIP123",
-  "order_id": "ORD456",
-  "status": "PENDING | DISPATCHED | DELIVERED",
-  "tracking_id": "TRACK123"
+  "_id": "ObjectId",
+  "code": "String",
+  "description": "String",
+  "discount_percent": "Number",
+  "valid_till": "Date",
+  "applicable_categories": ["String"],
+  "min_purchase_amount": "Number",
+  "is_active": "Boolean"
 }
 ```
 
-## invoices
+## Shipments
 
 ```json
 {
-  "_id": "INV789",
-  "order_id": "ORD456",
-  "invoice_url": "pdf_link",
-  "created_at": "timestamp"
+  "_id": "ObjectId",
+  "order_id": "String",
+  "user_id": "String",
+  "shipment_type": "String",
+  "carrier": "String",
+  "tracking_number": "String",
+  "expected_delivery_date": "Date",
+  "actual_delivery_date": "Date",
+  "delivery_status": "String",
+  "delivery_address": {
+    "line1": "String",
+    "line2": "String",
+    "city": "String",
+    "state": "String",
+    "pincode": "String",
+    "country": "String"
+  },
+  "assigned_agent": "String",
+  "last_updated": "Date"
 }
 ```
 
-## notifications
+## Feedback
 
 ```json
 {
-  "_id": "NOTIF123",
-  "user_id": "USER123",
-  "type": "ORDER_CONFIRMATION | DELIVERY_UPDATE | FEEDBACK",
-  "message": "Your order has been shipped",
-  "sent_at": "timestamp"
+  "_id": "ObjectId",
+  "user_id": "String",
+  "order_id": "String",
+  "product_id": "String",
+  "agent_id": "String",
+  "rating": "Number",
+  "review_text": "String",
+  "feedback_type": "String",
+  "submitted_at": "Date",
+  "sentiment_analysis": {
+    "score": "Number",
+    "label": "String"
+  }
 }
 ```
-
