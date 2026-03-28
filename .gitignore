@@ -8,3 +8,6 @@ backend/tech/
 
 # Environment variables
 .env
+
+
+node_modules/
