@@ -65,8 +65,8 @@ class RecommendationAgent:
         if constraints.get("colors"):
             query["attributes.color"] = {"$in": constraints["colors"]}
 
-        if constraints.get("tags"):
-            query["tags"] = {"$in": constraints["tags"]}
+        # if constraints.get("tags"):
+        #     query["tags"] = {"$in": constraints["tags"]}
 
         return query
 
@@ -99,7 +99,7 @@ class RecommendationAgent:
                 signals.append("POPULAR")
 
             scored.append({
-                "product_id": product.get("_id"),
+                "product_id": str(product.get("_id")),
                 "name": product.get("name"),
                 "category": product.get("category"),
                 "subcategory": product.get("subcategory"),
