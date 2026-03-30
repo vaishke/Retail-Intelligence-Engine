@@ -1,8 +1,8 @@
+# database.py
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import os
 
-# loads .env from project root
 load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI")
@@ -14,6 +14,7 @@ if not MONGO_URI or not DB_NAME:
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 
+# Collections
 users_collection = db["users"]
 sessions_collection = db["sessions"]
 products_collection = db["products"]

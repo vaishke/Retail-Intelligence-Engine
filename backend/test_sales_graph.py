@@ -11,10 +11,10 @@ from bson import ObjectId
 # Test 1: Discovery flow
 print("Testing discovery flow...")
 result = run_sales_graph(
-    user_id="6990a38e5837cd6bdc137a50",
+    user_id="69c9f759145e288b29244cd9",
     session_id=str(ObjectId()),
     channel="web",
-    message="Show exactly 1 anarkali style dress"
+    message="I want to discover some footwear products"
 )
 
 print("Intent detected:", result.get("current_intent"))

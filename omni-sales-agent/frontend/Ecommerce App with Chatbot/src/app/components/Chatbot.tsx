@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Send, Plus, Trash2 } from 'lucide-react';
+import { X, Send, Plus, Trash2, Bot, User } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
 import { Card } from './ui/card';
-import { storage, getAgentResponse, ChatSession, ChatMessage } from '../utils/mockData';
+import { storage, ChatSession, ChatMessage } from '../utils/mockData';
 import { toast } from 'sonner';
+import { sendChatToBackend } from '../../services/api';
 
 interface ChatbotProps {
   isOpen: boolean;
@@ -18,6 +19,8 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const userId = '69c9f759145e288b29244cd9'; // replace with real user later
 
   useEffect(() => {
     const savedSessions = storage.getChatSessions();
@@ -68,44 +71,66 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
   };
 
   const sendMessage = async () => {
-    if (!message.trim() || !currentSession) return;
+  if (!message.trim() || !currentSession) return;
 
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: message,
+  const userMessage: ChatMessage = {
+    id: Date.now().toString(),
+    role: 'user',
+    content: message,
+    timestamp: new Date().toISOString(),
+  };
+
+  const updatedSession = {
+    ...currentSession,
+    messages: [...currentSession.messages, userMessage],
+  };
+
+  setSessions(sessions.map(s => s.id === currentSessionId ? updatedSession : s));
+  setMessage('');
+  setIsTyping(true);
+
+  try {
+    const res = await sendChatToBackend(message, userId);
+
+    const agentMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      role: 'agent',
+      content: typeof res.response === 'string'
+        ? { message: res.response, products: [] }
+        : {
+            message: res.response?.message || 'No response',
+            products: res.response?.data?.recommendations || [],
+            prompt: res.response?.prompt || '', // optional follow-up prompt
+          },
       timestamp: new Date().toISOString(),
     };
 
-    const updatedSession = {
-      ...currentSession,
-      messages: [...currentSession.messages, userMessage],
+    const finalSession = {
+      ...updatedSession,
+      messages: [...updatedSession.messages, agentMessage],
     };
 
-    setSessions(sessions.map(s => s.id === currentSessionId ? updatedSession : s));
-    setMessage('');
-    setIsTyping(true);
-
-    // Simulate agent thinking
-    setTimeout(() => {
-      const agentMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'agent',
-        content: getAgentResponse(message),
-        timestamp: new Date().toISOString(),
-      };
-
-      const finalSession = {
-        ...updatedSession,
-        messages: [...updatedSession.messages, agentMessage],
-      };
-
-      const newSessions = sessions.map(s => s.id === currentSessionId ? finalSession : s);
-      setSessions(newSessions);
-      storage.setChatSessions(newSessions);
-      setIsTyping(false);
-    }, 1000);
-  };
+    const newSessions = sessions.map(s => s.id === currentSessionId ? finalSession : s);
+    setSessions(newSessions);
+    storage.setChatSessions(newSessions);
+  } catch (err) {
+    const errorMessage: ChatMessage = {
+      id: (Date.now() + 2).toString(),
+      role: 'agent',
+      content: 'Error connecting to server',
+      timestamp: new Date().toISOString(),
+    };
+    const finalSession = {
+      ...updatedSession,
+      messages: [...updatedSession.messages, errorMessage],
+    };
+    const newSessions = sessions.map(s => s.id === currentSessionId ? finalSession : s);
+    setSessions(newSessions);
+    storage.setChatSessions(newSessions);
+  } finally {
+    setIsTyping(false);
+  }
+};
 
   if (!isOpen) return null;
 
@@ -175,27 +200,50 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
           <ScrollArea className="flex-1 p-3 md:p-4">
             <div className="space-y-3 md:space-y-4">
               {currentSession?.messages.map(msg => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[85%] md:max-w-[80%] p-2.5 md:p-3 rounded-lg ${
-                      msg.role === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted'
-                    }`}
-                  >
-                    <p className="text-xs md:text-sm break-words">{msg.content}</p>
-                    <p className="text-[10px] md:text-xs mt-1 opacity-70">
-                      {new Date(msg.timestamp).toLocaleTimeString()}
-                    </p>
-                  </div>
-                </div>
-              ))}
+  <div
+    key={msg.id}
+    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+  >
+    {msg.role === 'agent' && <Bot className="h-5 w-5 text-primary mt-1 mr-1" />}
+    <div
+      className={`max-w-[85%] md:max-w-[80%] p-2.5 md:p-3 rounded-lg ${
+        msg.role === 'user'
+          ? 'bg-primary text-primary-foreground'
+          : 'bg-muted'
+      }`}
+    >
+      {msg.role === 'agent' && typeof msg.content === 'object' && msg.content.products?.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs md:text-sm break-words">{msg.content.message}</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
+            {msg.content.products.map((p: any) => (
+              <Card key={p.product_id} className="p-2 flex flex-col items-center">
+                <img src={p.image} alt={p.name} className="w-20 h-20 object-cover rounded-md" />
+                <p className="text-xs mt-1 font-semibold">{p.name}</p>
+                <p className="text-xs text-muted-foreground">₹{p.price}</p>
+              </Card>
+            ))}
+          </div>
+          {msg.content.prompt && (
+            <p className="text-xs md:text-sm mt-1 italic text-gray-500">{msg.content.prompt}</p>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs md:text-sm break-words">
+          {typeof msg.content === 'string' ? msg.content : msg.content.message || JSON.stringify(msg.content)}
+        </p>
+      )}
+      <p className="text-[10px] md:text-xs mt-1 opacity-70">
+        {new Date(msg.timestamp).toLocaleTimeString()}
+      </p>
+    </div>
+    {msg.role === 'user' && <User className="h-5 w-5 text-gray-500 mt-1 ml-1" />}
+  </div>
+))}
               {isTyping && (
                 <div className="flex justify-start">
-                  <div className="bg-muted p-2.5 md:p-3 rounded-lg">
+                  <div className="bg-muted p-2.5 md:p-3 rounded-lg flex items-center">
+                    <Bot className="h-5 w-5 text-primary mr-2" />
                     <p className="text-xs md:text-sm">Agent is typing...</p>
                   </div>
                 </div>

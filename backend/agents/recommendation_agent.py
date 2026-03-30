@@ -1,4 +1,4 @@
-from bson import ObjectId
+from bson import ObjectId, Regex
 from db.database import users_collection, products_collection
 
 
@@ -19,7 +19,6 @@ class RecommendationAgent:
         query = RecommendationAgent._build_query(constraints)
 
         if exclude_product_ids:
-            # Ensure ObjectId for exclusion
             exclude_oids = [ObjectId(pid) if not isinstance(pid, ObjectId) else pid for pid in exclude_product_ids]
             query["_id"] = {"$nin": exclude_oids}
 
@@ -37,7 +36,7 @@ class RecommendationAgent:
 
         applied_filters = {
             k: constraints[k]
-            for k in ["category", "subcategory", "price_range"]
+            for k in ["category", "subcategory", "tags", "price_range"]
             if k in constraints
         }
 
@@ -49,24 +48,34 @@ class RecommendationAgent:
 
     @staticmethod
     def _build_query(constraints):
-        query = {}
+        query = {"$or": []}
+
+        # Case-insensitive category match
         if constraints.get("category"):
-            query["category"] = constraints["category"]
+            query["$or"].append({"category": {"$regex": f"^{constraints['category']}$", "$options": "i"}})
 
+        # Case-insensitive subcategory match
         if constraints.get("subcategory"):
-            query["subcategory"] = constraints["subcategory"]
+            query["$or"].append({"subcategory": {"$regex": f"^{constraints['subcategory']}$", "$options": "i"}})
 
+        # Case-insensitive tag match
+        if constraints.get("tags"):
+            query["$or"].append({"tags": {"$in": [Regex(tag, "i") for tag in constraints["tags"]]}})
+
+        # Price range filter
         if constraints.get("price_range"):
             query["price"] = {
                 "$gte": constraints["price_range"][0],
                 "$lte": constraints["price_range"][1]
             }
 
+        # Color filter
         if constraints.get("colors"):
             query["attributes.color"] = {"$in": constraints["colors"]}
 
-        # if constraints.get("tags"):
-        #     query["tags"] = {"$in": constraints["tags"]}
+        # If no $or conditions, remove it to avoid empty $or
+        if not query["$or"]:
+            query.pop("$or")
 
         return query
 
@@ -78,22 +87,23 @@ class RecommendationAgent:
             score = 0
             signals = []
 
-            # Category/Subcategory match
-            if product.get("category") == constraints.get("category"):
+            # Category/Subcategory/Tag scoring
+            if constraints.get("category") and product.get("category", "").lower() == constraints["category"].lower():
                 score += 3
                 signals.append("CATEGORY_MATCH")
 
-            if product.get("subcategory") == constraints.get("subcategory"):
+            if constraints.get("subcategory") and product.get("subcategory", "").lower() == constraints["subcategory"].lower():
                 score += 2
                 signals.append("SUBCATEGORY_MATCH")
 
-            # Tag match
-            if set(product.get("tags", [])).intersection(set(constraints.get("tags", []))):
+            if constraints.get("tags") and set(map(str.lower, product.get("tags", []))).intersection(
+                map(str.lower, constraints["tags"])
+            ):
                 score += 2
                 signals.append("TAG_MATCH")
 
-            # Popularity (ratings)
-            rating = product.get("ratings", 0)  # schema uses 'ratings'
+            # Popularity
+            rating = product.get("ratings", 0)
             score += rating
             if rating >= 4:
                 signals.append("POPULAR")
@@ -117,7 +127,7 @@ class RecommendationAgent:
     def _build_reason(signals):
         if not signals:
             return "Popular product among users"
-        return "Matches your selected category and budget"
+        return "Matches your selected category, subcategory, or tags"
 
     @staticmethod
     def handle_request(recommendation_request):

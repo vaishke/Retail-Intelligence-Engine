@@ -1,25 +1,38 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ProductCard } from '../components/ProductCard';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { mockProducts } from '../utils/mockData';
+import { fetchProducts } from '../../services/api';
 import { Search } from 'lucide-react';
 
 export function ProductsPage() {
+  const [products, setProducts] = useState<any[]>([]); // ✅ new state
   const [searchTerm, setSearchTerm] = useState('');
   const [category, setCategory] = useState('all');
   const [sortBy, setSortBy] = useState('featured');
 
-  const categories = ['all', ...Array.from(new Set(mockProducts.map(p => p.category)))];
+  // ✅ FETCH FROM BACKEND
+  useEffect(() => {
+    fetchProducts().then((data) => {
+      setProducts(data);
+    });
+  }, []);
 
-  let filteredProducts = mockProducts.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  // ✅ categories from API data
+  const categories = ['all', ...Array.from(new Set(products.map(p => p.category)))];
+
+  // ✅ filtering
+  let filteredProducts = products.filter(product => {
+    const matchesSearch =
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.description.toLowerCase().includes(searchTerm.toLowerCase());
+
     const matchesCategory = category === 'all' || product.category === category;
+
     return matchesSearch && matchesCategory;
   });
 
-  // Sort products
+  // ✅ sorting
   filteredProducts = [...filteredProducts].sort((a, b) => {
     switch (sortBy) {
       case 'price-low':
@@ -49,6 +62,7 @@ export function ProductsPage() {
             className="pl-10 text-sm md:text-base"
           />
         </div>
+
         <Select value={category} onValueChange={setCategory}>
           <SelectTrigger className="text-sm md:text-base">
             <SelectValue placeholder="Category" />
@@ -60,6 +74,7 @@ export function ProductsPage() {
             ))}
           </SelectContent>
         </Select>
+
         <Select value={sortBy} onValueChange={setSortBy}>
           <SelectTrigger className="text-sm md:text-base">
             <SelectValue placeholder="Sort by" />

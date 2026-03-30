@@ -1,17 +1,26 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent } from '../components/ui/card';
-import { mockProducts, storage } from '../utils/mockData';
+import { fetchProducts, addToCart } from '../../services/api';
 import { ShoppingCart, Star, Minus, Plus, ArrowLeft, Package, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function ProductDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const product = mockProducts.find(p => p.id === id);
+
+  const [product, setProduct] = useState<any>(null); // ✅ from API
   const [quantity, setQuantity] = useState(1);
+
+  // ✅ FETCH PRODUCT FROM BACKEND
+  useEffect(() => {
+    fetchProducts().then((data) => {
+      const found = data.find((p: any) => p.id === id);
+      setProduct(found);
+    });
+  }, [id]);
 
   if (!product) {
     return (
@@ -22,31 +31,21 @@ export function ProductDetailPage() {
     );
   }
 
-  const addToCart = () => {
+  // ✅ UPDATED ADD TO CART (API)
+  const handleAddToCart = async () => {
     if (product.stock === 0) {
       toast.error('Product is out of stock');
       return;
     }
 
-    const cart = storage.getCart();
-    const existingItem = cart.find(item => item.productId === product.id);
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-    if (existingItem) {
-      const newQuantity = existingItem.quantity + quantity;
-      if (newQuantity <= product.stock) {
-        existingItem.quantity = newQuantity;
-        storage.setCart(cart);
-        toast.success(`Added ${quantity} item(s) to cart`);
-      } else {
-        toast.error('Cannot add more than available stock');
-      }
-    } else {
-      if (quantity <= product.stock) {
-        storage.setCart([...cart, { productId: product.id, quantity }]);
-        toast.success(`Added ${quantity} item(s) to cart`);
-      } else {
-        toast.error('Cannot add more than available stock');
-      }
+    try {
+      await addToCart(user.id, product.id, quantity);
+      toast.success(`Added ${quantity} item(s) to cart`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to add to cart");
     }
   };
 
@@ -66,7 +65,7 @@ export function ProductDetailPage() {
             className="w-full rounded-lg shadow-lg"
           />
           {product.stock === 0 && (
-            <Badge className="absolute top-4 right-4" variant="destructive" size="lg">
+            <Badge className="absolute top-4 right-4" variant="destructive">
               Out of Stock
             </Badge>
           )}
@@ -151,17 +150,17 @@ export function ProductDetailPage() {
                 </div>
               </div>
 
-              {/* Add to Cart Button */}
+              {/* Buttons */}
               <div className="flex space-x-4">
-                <Button className="flex-1" size="lg" onClick={addToCart}>
+                <Button className="flex-1" size="lg" onClick={handleAddToCart}>
                   <ShoppingCart className="h-5 w-5 mr-2" />
                   Add to Cart
                 </Button>
                 <Button
                   variant="outline"
                   size="lg"
-                  onClick={() => {
-                    addToCart();
+                  onClick={async () => {
+                    await handleAddToCart();
                     navigate('/cart');
                   }}
                 >

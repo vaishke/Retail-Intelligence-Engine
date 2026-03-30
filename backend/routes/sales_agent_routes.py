@@ -1,39 +1,57 @@
 from fastapi import APIRouter, Body
-from services.session_service import create_session, get_session, update_session, end_session
-from services.recommendation_service import RecommendationService
-from services.inventory_service import InventoryService
-from services.offer_loyalty_service import OfferLoyaltyService
-from services.payment_service import PaymentService
-from services.post_purchase_service import PostPurchaseService
-from sales_graph.graph import build_sales_graph
+from sales_graph.graph import run_sales_graph
+from bson import ObjectId 
 
 router = APIRouter(
     prefix="/sales",
     tags=["Sales Agent"]
 )
 
-sales_app = build_sales_graph()
+# sales_app = sales_graph
+
+# Helper class to wrap response dict as object
+class ResponseWrapper:
+    def __init__(self, response_dict):
+        self.message = response_dict.get("message")
+        self.prompt = response_dict.get("prompt")
+        for k, v in response_dict.items():
+            if k not in ["message", "prompt"]:
+                setattr(self, k, v)
 
 @router.post("/chat")
 def sales_chat(payload: dict = Body(...)):
-    """
-    Unified entry point for the Sales Agent.
-    Drives the LangGraph workflow.
-    """
-
     if "user_id" not in payload:
         return {
             "success": False,
-            "message": "user_id is required"
+            "response": ResponseWrapper({"message": "user_id is required", "prompt": None})
         }
 
-    result = sales_app.invoke(payload)
+    try:
+        # Always pass the user message via 'message' param
+        user_message = payload.get("message") or payload.get("prompt") or ""
+        result = run_sales_graph(
+            user_id=payload["user_id"],
+            session_id=str(payload.get("session_id") or ObjectId()),
+            channel=payload.get("channel", "web"),
+            message=user_message,
+            extras=payload.get("extras")
+        )
 
-    return {
-        "success": True,
-        "state": result
-    }
+        # Wrap the response
+        reply = ResponseWrapper(result.get("response", {"message": str(result), "prompt": None}))
 
+        return {
+            "success": True,
+            "response": reply,
+            "state": result
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "response": ResponseWrapper({"message": f"Error: {str(e)}", "prompt": None})
+        }
+    
 @router.post("/session/start")
 def start_session(data: dict = Body(...)):
     user_id = data.get("user_id")

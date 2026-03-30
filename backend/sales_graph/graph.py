@@ -110,7 +110,7 @@ sales_graph = create_sales_graph()
 
 
 # ─── Helper function to invoke the graph ───────────────────────────
-def run_sales_graph(user_id: str, session_id: str, channel: str, message: str) -> Dict[str, Any]:
+def run_sales_graph(user_id: str, session_id: str, channel: str, message: str, extras: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Convenience function to run the graph with a user message.
     
@@ -119,6 +119,7 @@ def run_sales_graph(user_id: str, session_id: str, channel: str, message: str) -
         session_id: MongoDB session._id as string  
         channel: "web" | "mobile" | "kiosk" etc
         message: User's text input
+        extras: Optional extra fields (payment_method, coupon_code, delivery_address, location etc.)
     
     Returns:
         Final state with response
@@ -127,6 +128,12 @@ def run_sales_graph(user_id: str, session_id: str, channel: str, message: str) -
     # Create initial state
     from sales_graph.state import create_initial_state
     initial_state = create_initial_state(user_id, session_id, channel, message)
+    
+    # Patch in any extra fields from the API request (payment_method, coupon_code, etc.)
+    if extras:
+        for key, value in extras.items():
+            if value is not None:
+                initial_state[key] = value
     
     # Define checkpoint config
     config = {

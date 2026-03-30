@@ -62,12 +62,13 @@ def payment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     try:
         # Call your existing payment agent
+        # order_id is stored as string in state (converted in loyalty_offers node)
+        # so we convert back to ObjectId for MongoDB lookup
         result = PaymentAgent.process_payment(
-            order_id=order_id,  # Already an ObjectId from OfferLoyaltyAgent
+            order_id=ObjectId(order_id),
             payment_method=payment_method,
             details=payment_details
         )
-        
         if result.get("success"):
             # Payment successful
             return {

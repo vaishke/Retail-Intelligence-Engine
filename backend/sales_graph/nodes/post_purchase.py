@@ -45,16 +45,28 @@ def post_purchase_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             }
         }
     
+    # if not delivery_address or not delivery_address.get("city"):
+    #     return {
+    #         "last_worker": "post_purchase_agent",
+    #         "agent_call_history": state.get("agent_call_history", []) + ["post_purchase_agent"],
+    #         "last_error": {
+    #             "code": "MISSING_ADDRESS",
+    #             "message": "Delivery address with city is required",
+    #             "worker": "post_purchase_agent",
+    #             "retryable": False
+    #         }
+    #     }
+    
+    # If delivery_address is missing or has no city, build a default from location state
     if not delivery_address or not delivery_address.get("city"):
-        return {
-            "last_worker": "post_purchase_agent",
-            "agent_call_history": state.get("agent_call_history", []) + ["post_purchase_agent"],
-            "last_error": {
-                "code": "MISSING_ADDRESS",
-                "message": "Delivery address with city is required",
-                "worker": "post_purchase_agent",
-                "retryable": False
-            }
+        location = state.get("location") or {}
+        delivery_address = {
+            "city": location.get("city", "Mumbai"),  # Default city fallback
+            "line1": "",
+            "line2": "",
+            "state": "",
+            "pincode": "",
+            "country": "India"
         }
     
     try:
