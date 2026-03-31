@@ -8,15 +8,41 @@ import { Sparkles, TrendingUp, Award, MessageSquare, Search } from 'lucide-react
 import { Chatbot } from '../components/Chatbot';
 
 export function HomePage() {
-  const [user, setUser] = useState(storage.getUser());
+  const [user, setUser] = useState<any>(null);
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!user) {
-      navigate('/login');
-    }
-  }, [user, navigate]);
+    const fetchUser = async () => {
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        navigate("/login");
+        return;
+      }
+
+      try {
+        const res = await fetch("http://localhost:8000/auth/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          setUser(data.user);
+        } else {
+          navigate("/login");
+        }
+      } catch (err) {
+        console.error(err);
+        navigate("/login");
+      }
+    };
+
+    fetchUser();
+  }, [navigate]);
 
   const featuredProducts = mockProducts.filter(p => p.featured);
   const recommendedProducts = mockProducts.slice(0, 4);
@@ -90,7 +116,7 @@ export function HomePage() {
             </div>
             <div>
               <p className="text-xs md:text-sm text-muted-foreground">Loyalty Points</p>
-              <p className="text-xl md:text-2xl font-bold">{user?.loyaltyPoints || 0}</p>
+              <p className="text-xl md:text-2xl font-bold">{user?.loyalty?.points || 0}</p>
             </div>
           </CardContent>
         </Card>

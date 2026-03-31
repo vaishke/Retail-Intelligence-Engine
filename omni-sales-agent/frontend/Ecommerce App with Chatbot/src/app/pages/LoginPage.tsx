@@ -4,7 +4,6 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
-import { storage, User } from '../utils/mockData';
 import { toast } from 'sonner';
 
 export function LoginPage() {
@@ -12,24 +11,41 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Mock login - in real app, this would authenticate with backend
-    if (email && password) {
-      const mockUser: User = {
-        id: '1',
-        name: email.split('@')[0],
-        email,
-        loyaltyPoints: 250,
-        memberSince: '2024-01-15',
-      };
-      
-      storage.setUser(mockUser);
-      toast.success('Login successful!');
-      navigate('/');
-    } else {
-      toast.error('Please enter email and password');
+
+    if (!email || !password) {
+      toast.error("Please enter email and password");
+      return;
+    }
+
+    try {
+      const res = await fetch("http://localhost:8000/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+      console.log("LOGIN RESPONSE:", data);
+
+      if (!data.success) {
+        toast.error(data.reason || "Login failed");
+        return;
+      }
+
+      // ✅ store token properly
+      localStorage.setItem("token", data.token);
+      window.dispatchEvent(new Event("storage"));
+      toast.success("Login successful!");
+
+      navigate("/", { replace: true });
+
+    } catch (err) {
+      console.error(err);
+      toast.error("Something went wrong");
     }
   };
 

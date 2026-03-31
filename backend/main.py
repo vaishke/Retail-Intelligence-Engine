@@ -15,6 +15,7 @@ from routes.recommendation_routes import router as recommendation_router
 from routes.post_purchase_route import router as post_purchase_router
 from routes.fulfillment_routes import router as fulfillment_router
 from routes.debug_routes import router as debug_router
+from routes.user_auth_routes import router as auth_router
 
 app = FastAPI(
     title="Retail Agentic AI Backend",
@@ -42,6 +43,7 @@ app.include_router(payment_router)
 app.include_router(recommendation_router)
 app.include_router(post_purchase_router)
 app.include_router(fulfillment_router)
+app.include_router(auth_router)
 
 # ✅ Root endpoint
 @app.get("/", tags=["Health"])

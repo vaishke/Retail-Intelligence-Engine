@@ -14,28 +14,48 @@ export function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const navigate = useNavigate();
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
+
+    if (!name || !email || !password) {
+      toast.error("Please fill in all fields");
       return;
     }
-    
-    if (name && email && password) {
-      const mockUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
-        name,
-        email,
-        loyaltyPoints: 100, // Welcome bonus!
-        memberSince: new Date().toISOString().split('T')[0],
-      };
-      
-      storage.setUser(mockUser);
-      toast.success('Account created successfully! Welcome bonus: 100 loyalty points');
-      navigate('/');
-    } else {
-      toast.error('Please fill in all fields');
+
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    try {
+      const res = await fetch("http://localhost:8000/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+        }),
+      });
+
+      const data = await res.json();
+      console.log("REGISTER RESPONSE:", data);
+
+      if (data.success) {
+        localStorage.setItem("token", data.token);
+        window.dispatchEvent(new Event("storage"));
+        toast.success("Account created successfully!");
+        navigate("/");
+        window.location.reload(); // force UI update
+      } else {
+        toast.error("Registration failed");
+      }
+
+    } catch (err) {
+      console.error(err);
+      toast.error("Something went wrong");
     }
   };
 

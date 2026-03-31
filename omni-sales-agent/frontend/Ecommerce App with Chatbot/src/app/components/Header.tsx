@@ -2,7 +2,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingCart, User, Store, MessageCircle as MessageCircleIcon, Menu, X, Package, Award } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { storage } from '../utils/mockData';
 import { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from './ui/sheet';
 
@@ -12,25 +11,73 @@ interface HeaderProps {
 
 export function Header({ onChatClick }: HeaderProps) {
   const [cartCount, setCartCount] = useState(0);
-  const [user, setUser] = useState(storage.getUser());
+  const [user, setUser] = useState<any>(null);
+  useEffect(() => {
+    const fetchUser = async () => {
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        setUser(null);
+        return;
+      }
+
+      try {
+        const res = await fetch("http://localhost:8000/auth/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          setUser(null);
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data.user) {
+          setUser(data.user);
+        } else {
+          setUser(null);
+        }
+      } catch (err) {
+        console.error(err);
+        setUser(null);
+      }
+    };
+
+    fetchUser();
+
+    const handleStorageChange = () => {
+      fetchUser();
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, []);
+  // window.location.reload();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     const updateCart = () => {
-      const cart = storage.getCart();
-      setCartCount(cart.reduce((sum, item) => sum + item.quantity, 0));
+      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+      setCartCount(cart.reduce((sum: number, item: any) => sum + item.quantity, 0));
     };
 
     updateCart();
-    const interval = setInterval(updateCart, 500);
+    const interval = setInterval(updateCart, 1000);
     return () => clearInterval(interval);
   }, []);
 
   const handleLogout = () => {
-    storage.clearUser();
+    localStorage.removeItem("token");
     setUser(null);
-    navigate('/login');
+    navigate("/login");
+    window.location.reload(); // force UI sync
   };
 
   return (

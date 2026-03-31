@@ -16,8 +16,11 @@ import { RewardsPage } from './pages/RewardsPage';
 import { storage } from './utils/mockData';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const user = storage.getUser();
-  return user ? <>{children}</> : <Navigate to="/login" replace />;
+  const token = localStorage.getItem("token");
+
+  if (!token) return <Navigate to="/login" replace />;
+
+  return <>{children}</>;
 }
 
 function App() {

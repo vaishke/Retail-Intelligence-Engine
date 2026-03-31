@@ -2,21 +2,62 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { storage } from '../utils/mockData';
 import { Award, Mail, Calendar, Gift, TrendingUp } from 'lucide-react';
 import { Progress } from '../components/ui/progress';
+import { useEffect, useState } from 'react';
 
 export function ProfilePage() {
-  const user = storage.getUser();
-  const navigate = useNavigate();
+  const navigate = useNavigate(); // ✅ moved up (you were using it before declaring)
 
-  if (!user) {
-    navigate('/login');
-    return null;
-  }
+  const [user, setUser] = useState<any>(null);
 
-  const pointsToNextReward = 500 - (user.loyaltyPoints % 500);
-  const progress = ((user.loyaltyPoints % 500) / 500) * 100;
+  useEffect(() => {
+    const fetchUser = async () => {
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        navigate("/login");
+        return;
+      }
+
+      try {
+        const res = await fetch("http://localhost:8000/auth/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          navigate("/login");
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data.user) {
+          setUser(data.user);
+        } else {
+          navigate("/login");
+        }
+      } catch (err) {
+        console.error(err);
+        navigate("/login");
+      }
+    };
+
+    fetchUser();
+  }, [navigate]);
+
+  if (!user) return null;
+
+  // ✅ SAFE FALLBACKS (no backend? no crash 😌)
+  const loyaltyPoints = user.loyaltyPoints ?? 0;
+  const memberSince = user.memberSince ?? new Date();
+
+  // ✅ FIXED LOGIC (handles 0 correctly)
+  const remainder = loyaltyPoints % 500;
+  const pointsToNextReward = remainder === 0 ? 500 : 500 - remainder;
+  const progress = (remainder / 500) * 100;
 
   return (
     <div className="container mx-auto px-4 py-6 md:py-8">
@@ -30,7 +71,7 @@ export function ProfilePage() {
           <CardContent className="space-y-4 md:space-y-6">
             <div className="flex items-center space-x-3 md:space-x-4">
               <div className="h-16 w-16 md:h-20 md:w-20 rounded-full bg-primary flex items-center justify-center text-white text-2xl md:text-3xl font-bold flex-shrink-0">
-                {user.name.charAt(0).toUpperCase()}
+                {user.name?.charAt(0)?.toUpperCase() || "U"}
               </div>
               <div>
                 <h2 className="text-xl md:text-2xl font-bold">{user.name}</h2>
@@ -51,7 +92,7 @@ export function ProfilePage() {
                 <div>
                   <p className="text-xs md:text-sm text-muted-foreground">Member Since</p>
                   <p className="font-semibold text-sm md:text-base">
-                    {new Date(user.memberSince).toLocaleDateString()}
+                    {new Date(memberSince).toLocaleDateString()}
                   </p>
                 </div>
               </div>
@@ -59,6 +100,7 @@ export function ProfilePage() {
           </CardContent>
         </Card>
 
+        {/* ✅ LOYALTY SECTION FIXED */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center text-lg md:text-xl">
@@ -69,20 +111,33 @@ export function ProfilePage() {
           <CardContent>
             <div className="text-center mb-4 md:mb-6">
               <p className="text-4xl md:text-5xl font-bold text-primary mb-2">
-                {user.loyaltyPoints}
+                {loyaltyPoints}
               </p>
-              <p className="text-xs md:text-sm text-muted-foreground">Points Available</p>
+              <p className="text-xs md:text-sm text-muted-foreground">
+                Points Available
+              </p>
             </div>
+
             <div className="space-y-3">
               <div>
                 <div className="flex justify-between text-xs md:text-sm mb-2">
                   <span>Next Reward</span>
-                  <span className="font-semibold">{pointsToNextReward} pts away</span>
+                  <span className="font-semibold">
+                    {pointsToNextReward} pts away
+                  </span>
                 </div>
+
                 <Progress value={progress} />
               </div>
-              <Button className="w-full text-sm md:text-base" variant="outline">
-                View Rewards
+
+              <Button
+                className="w-full text-sm md:text-base"
+                variant="outline"
+                disabled={loyaltyPoints < 100}
+              >
+                {loyaltyPoints >= 100
+                  ? "Redeem Rewards"
+                  : "Earn more to unlock rewards"}
               </Button>
             </div>
           </CardContent>
@@ -105,6 +160,7 @@ export function ProfilePage() {
                   </p>
                 </div>
               </div>
+
               <div className="flex items-start space-x-3">
                 <div className="p-2 md:p-3 bg-purple-100 rounded-lg flex-shrink-0">
                   <Gift className="h-5 w-5 md:h-6 md:w-6 text-purple-600" />
@@ -116,6 +172,7 @@ export function ProfilePage() {
                   </p>
                 </div>
               </div>
+
               <div className="flex items-start space-x-3">
                 <div className="p-2 md:p-3 bg-green-100 rounded-lg flex-shrink-0">
                   <Award className="h-5 w-5 md:h-6 md:w-6 text-green-600" />
