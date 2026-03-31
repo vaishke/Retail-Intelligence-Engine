@@ -14,6 +14,7 @@ export function ProductsPage() {
   // ✅ FETCH FROM BACKEND
   useEffect(() => {
     fetchProducts().then((data) => {
+      console.log(data);
       setProducts(data);
     });
   }, []);
