@@ -48,7 +48,7 @@ export interface Coupon {
 export interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
-  content: string;
+  content: string | { message: string; products?: any[]; prompt?: string };
   timestamp: string;
 }
 

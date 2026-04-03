@@ -99,7 +99,7 @@ export function HomePage() {
               <Button variant="secondary">Shop Now</Button>
             </Link>
             <Link to="/rewards">
-              <Button variant="outline" className="text-white border-white hover:bg-white/20">
+              <Button variant="outline" className="text-black border-white hover:bg-white/20">
                 View Rewards
               </Button>
             </Link>

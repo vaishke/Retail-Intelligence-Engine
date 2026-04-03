@@ -3,33 +3,32 @@ from datetime import datetime
 import uuid
 
 def create_session(user_id, channel):
-    """
-    Create a new session for the user.
-    """
     session_id = str(uuid.uuid4())
+
     session_doc = {
         "_id": session_id,
         "user_id": user_id,
-        "active_channel": channel,
+
+        "title": "New Chat",
+        "channel": channel,
+        "status": "active",
+
+        "chat_history": [],
+
         "context": {
-            "intent": None,
-            "current_category": None,
+            "current_intent": None,
             "selected_products": [],
-            "cart_order_id": None,
-            "last_agent": None,
-            "last_step": None,
-            "recommendations": [],
-            "stock_status": [],
-            "offers_applied": [],
-            "payment_status": None,
-            "transaction_id": None,
-            "fulfillment_status": None,
-            "final_amount": 0
+            "last_recommendations": [],
+            "last_viewed_product": None,
+            "pending_action": None
         },
-        "channel_history": [{"channel": channel, "at": datetime.utcnow()}],
-        "updated_at": datetime.utcnow(),
-        "active": True
+
+        "metadata": {
+            "created_at": datetime.utcnow(),
+            "last_updated": datetime.utcnow()
+        }
     }
+
     sessions_collection.insert_one(session_doc)
     return session_doc
 
@@ -39,17 +38,27 @@ def get_session(session_id):
     """
     return sessions_collection.find_one({"_id": session_id})
 
-def update_session(session_id, context_updates):
-    """
-    Update session context after actions (cart, recommendations, payment, etc.).
-    """
+def add_message(session_id, role, message):
+    sessions_collection.update_one(
+        {"_id": session_id},
+        {
+            "$push": {
+                "chat_history": {
+                    "role": role,
+                    "message": message,
+                    "timestamp": datetime.utcnow()
+                }
+            },
+            "$currentDate": {"metadata.last_updated": True}
+        }
+    )
+
+def update_session(session_id, updates):
     result = sessions_collection.update_one(
         {"_id": session_id},
         {
-            "$set": {
-                "context": context_updates,
-                "updated_at": datetime.utcnow()
-            }
+            "$set": updates,
+            "$currentDate": {"metadata.last_updated": True}
         }
     )
     return get_session(session_id)

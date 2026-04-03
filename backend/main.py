@@ -1,12 +1,9 @@
 # main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from bson import ObjectId
 
-# ✅ Import MongoDB collections
 from db.database import products_collection
 
-# ✅ Import routers
 from routes.sales_agent_routes import router as sales_router
 from routes.inventory_routes import router as inventory_router
 from routes.offer_loyalty_routes import router as offer_router
@@ -17,25 +14,29 @@ from routes.fulfillment_routes import router as fulfillment_router
 from routes.debug_routes import router as debug_router
 from routes.user_auth_routes import router as auth_router
 
+from dotenv import load_dotenv
+import os
+
 app = FastAPI(
     title="Retail Agentic AI Backend",
     description="Agent-based backend for inventory, sales, and order intelligence",
     version="1.0.0"
 )
 
-# ✅ Include debug router first (optional)
+load_dotenv()
+
+print("os jwt: ", os.getenv("JWT_SECRET"))
+
 app.include_router(debug_router)
 
-# ✅ CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # restrict in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Register all routers
 app.include_router(sales_router)
 app.include_router(inventory_router)
 app.include_router(offer_router)
@@ -45,7 +46,6 @@ app.include_router(post_purchase_router)
 app.include_router(fulfillment_router)
 app.include_router(auth_router)
 
-# ✅ Root endpoint
 @app.get("/", tags=["Health"])
 def root():
     return {
@@ -54,15 +54,11 @@ def root():
         "docs": "GET /docs"
     }
 
-# ✅ Health check
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "healthy"}
 
 
-# -------------------------------
-# Products endpoint
-# -------------------------------
 def serialize_product(product):
     """Convert MongoDB document to JSON-serializable dict."""
     product["_id"] = str(product["_id"])

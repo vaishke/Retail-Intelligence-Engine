@@ -1,15 +1,33 @@
-from fastapi import APIRouter, Body
+from services.session_service import (
+    add_message,
+    get_session,
+    create_session,
+    update_session,
+    end_session
+)
 from sales_graph.graph import run_sales_graph
-from bson import ObjectId 
+from db.database import sessions_collection
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
+
+from services.user_auth_service import verify_token
 
 router = APIRouter(
     prefix="/sales",
     tags=["Sales Agent"]
 )
 
-# sales_app = sales_graph
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-# Helper class to wrap response dict as object
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    user = verify_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return user
+
+
 class ResponseWrapper:
     def __init__(self, response_dict):
         self.message = response_dict.get("message")
@@ -18,121 +36,117 @@ class ResponseWrapper:
             if k not in ["message", "prompt"]:
                 setattr(self, k, v)
 
-@router.post("/chat")
-def sales_chat(payload: dict = Body(...)):
-    if "user_id" not in payload:
-        return {
-            "success": False,
-            "response": ResponseWrapper({"message": "user_id is required", "prompt": None})
-        }
 
+@router.post("/chat")
+def sales_chat(
+    payload: dict = Body(...),
+    user=Depends(get_current_user)
+):
     try:
-        # Always pass the user message via 'message' param
-        user_message = payload.get("message") or payload.get("prompt") or ""
+        user_id = user["user_id"]
+        session_id = payload.get("session_id")
+        user_message = payload.get("message")
+
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id required")
+
+        if not user_message or not user_message.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+        session = get_session(session_id)
+        if not session or session["user_id"] != user_id:
+            print("SESSION USER ID:", session["user_id"])
+            print("TOKEN USER ID:", user["user_id"])
+            raise HTTPException(status_code=403, detail="Unauthorized")
+
+        add_message(session_id, "user", user_message)
+
         result = run_sales_graph(
-            user_id=payload["user_id"],
-            session_id=str(payload.get("session_id") or ObjectId()),
-            channel=payload.get("channel", "web"),
+            user_id=user_id,
+            session_id=session_id,
+            channel=payload.get("channel", "web").lower(),
             message=user_message,
             extras=payload.get("extras")
         )
 
-        # Wrap the response
-        reply = ResponseWrapper(result.get("response", {"message": str(result), "prompt": None}))
+        bot_reply = result.get("response", {}).get("message", "")
+
+        add_message(session_id, "assistant", bot_reply)
 
         return {
             "success": True,
-            "response": reply,
+            "response": ResponseWrapper(result.get("response", {})),
             "state": result
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "response": ResponseWrapper({"message": f"Error: {str(e)}", "prompt": None})
-        }
-    
+        print("CHAT ERROR:", str(e))
+        raise e
+
+
 @router.post("/session/start")
-def start_session(data: dict = Body(...)):
-    user_id = data.get("user_id")
+def start_session(
+    data: dict = Body(...),
+    user=Depends(get_current_user)
+):
+    user_id = user["user_id"]
     channel = data.get("channel", "WEB")
+
     return create_session(user_id, channel)
 
+
 @router.get("/session/{session_id}")
-def get_session_route(session_id: str):
-    return get_session(session_id)
+def get_session_route(
+    session_id: str,
+    user=Depends(get_current_user)
+):
+    session = get_session(session_id)
+
+    if not session or session["user_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    return session
+
 
 @router.post("/session/update/{session_id}")
-def update_session_route(session_id: str, data: dict = Body(...)):
+def update_session_route(
+    session_id: str,
+    data: dict = Body(...),
+    user=Depends(get_current_user)
+):
+    session = get_session(session_id)
+
+    if not session or session["user_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
     return update_session(session_id, data)
 
+
 @router.post("/session/end/{session_id}")
-def end_session_route(session_id: str):
+def end_session_route(
+    session_id: str,
+    user=Depends(get_current_user)
+):
+    session = get_session(session_id)
+
+    if not session or session["user_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
     return {"success": end_session(session_id)}
 
-@router.post("/recommend/{session_id}")
-def recommend(session_id: str, data: dict = Body(...)):
-    session = get_session(session_id)
-    constraints = data.get("constraints", {})
-    exclude_products = session["context"].get("selected_products", [])
-    recs = RecommendationService.recommend_service(
-        user_id=session["user_id"],
-        constraints=constraints,
-        top_k=data.get("top_k", 5),
-        exclude_product_ids=exclude_products
+
+@router.get("/sessions")
+def get_user_sessions(user=Depends(get_current_user)):
+    user_id = user["user_id"]
+
+    sessions = list(
+        sessions_collection.find(
+            {"user_id": user_id},
+            {"chat_history": 0}
+        ).sort("updated_at", -1)
     )
-    session["context"]["recommendations"] = recs
-    update_session(session_id, session["context"])
-    return recs
 
-@router.post("/inventory/{session_id}")
-def check_inventory(session_id: str, data: dict = Body(...)):
-    session = get_session(session_id)
-    user_location = data.get("user_location")
-    stock_results = [
-        InventoryService.check_stock_service(sku, user_location)
-        for sku in session["context"].get("selected_products", [])
-    ]
-    session["context"]["stock_status"] = stock_results
-    update_session(session_id, session["context"])
-    return stock_results
+    for s in sessions:
+        s["_id"] = str(s["_id"])
 
-@router.post("/offers/{session_id}")
-def apply_offers(session_id: str, data: dict = Body(...)):
-    session = get_session(session_id)
-    cart_items = data.get("cart_items", [])
-    coupon = data.get("coupon_code")
-    use_points = data.get("use_points", 0)
-    offers = OfferLoyaltyService.checkout_service(session["user_id"], cart_items, coupon, use_points)
-    session["context"]["offers_applied"] = offers
-    update_session(session_id, session["context"])
-    return offers
-
-@router.post("/payment/{session_id}")
-def process_payment(session_id: str, data: dict = Body(...)):
-    session = get_session(session_id)
-    payment_data = {
-        "order_id": session["context"].get("cart_order_id"),
-        "payment_method": data.get("payment_method"),
-        "details": data.get("details", {})
-    }
-    payment_result = PaymentService.process_payment_service(payment_data)
-    session["context"]["payment_status"] = payment_result.get("success")
-    session["context"]["transaction_id"] = payment_result.get("transaction_id")
-    update_session(session_id, session["context"])
-    return payment_result
-
-@router.post("/post_purchase/{session_id}")
-def post_purchase(session_id: str, data: dict = Body(...)):
-    session = get_session(session_id)
-    post_data = {
-        "order_id": session["context"].get("cart_order_id"),
-        "transaction_id": session["context"].get("transaction_id"),
-        "user_id": session["user_id"],
-        "cart_items": data.get("cart_items", []),
-        "final_amount": data.get("final_amount"),
-        "delivery_address": data.get("delivery_address")
-    }
-    result = PostPurchaseService.handle_post_service(post_data)
-    end_session(session_id)
-    return result
+    return sessions

@@ -109,3 +109,15 @@ class UserAuthService:
             return {"success": False, "reason": "TOKEN_EXPIRED"}
         except jwt.InvalidTokenError:
             return {"success": False, "reason": "INVALID_TOKEN"}
+    
+def verify_token(token: str):
+    print("TOKEN RECEIVED:", token)
+
+    result = UserAuthService.get_current_user(token)
+
+    print("DECODE RESULT:", result)
+
+    if not result["success"]:
+        return None
+
+    return result["user"]
