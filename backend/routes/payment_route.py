@@ -10,3 +10,8 @@ router = APIRouter(
 @router.post("/process")
 def process_payment(data: dict = Body(...)):
     return PaymentService.process_payment_service(data)
+
+
+@router.get("/methods")
+def get_payment_methods():
+    return PaymentService.get_supported_methods()

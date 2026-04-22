@@ -26,8 +26,8 @@ def post_purchase_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     - last_error (if failure)
     """
     
-    loyalty_data = state.get("loyalty_data", {})
-    payment_status = state.get("payment_status", {})
+    loyalty_data = state.get("loyalty_data") or {}
+    payment_status = state.get("payment_status") or {}
     delivery_address = state.get("delivery_address")
     
     order_id = loyalty_data.get("order_id")
@@ -75,6 +75,7 @@ def post_purchase_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "order_id": str(order_id),  # Convert ObjectId to string
             "transaction_id": transaction_id,
             "user_id": str(state["user_id"]),
+            "session_id": state.get("session_id"),
             "cart_items": [
                 {
                     "product_id": str(item["product_id"]),
@@ -93,12 +94,21 @@ def post_purchase_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if result.get("success"):
             # Post-purchase steps completed successfully
             return {
+                "cart_items": [],
                 "order_status": {
-                    **state.get("order_status", {}),
+                    **(state.get("order_status") or {}),
+                    "order_id": str(order_id),
+                    "transaction_id": transaction_id,
+                    "final_amount": loyalty_data.get("final_amount", 0),
+                    "points_earned_at_checkout": loyalty_data.get("loyalty_points_earned", 0),
                     "confirmed": True,
                     "shipment_id": result.get("shipment_id"),
                     "invoice_id": result.get("invoice_id"),
-                    "tracking_status": "processing"
+                    "tracking_status": "processing",
+                    "bonus_points": result.get("bonus_points", 0),
+                    "loyalty_points_total": result.get("loyalty_points_total"),
+                    "loyalty_tier": result.get("loyalty_tier"),
+                    "cart_cleared": result.get("cart_cleared", False),
                 },
                 "last_worker": "post_purchase_agent",
                 "agent_call_history": state.get("agent_call_history", []) + ["post_purchase_agent"],

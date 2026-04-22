@@ -81,10 +81,29 @@ export async function addToCart(userId: string, productId: string, quantity: num
 export async function placeOrder(payload: any) {
   const res = await fetch(`${BASE_URL}/orders`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
-  return res.json();
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.detail?.message || data?.message || "Failed to place order");
+  }
+
+  return data;
+}
+
+export async function fetchOrders() {
+  const res = await fetch(`${BASE_URL}/orders`, {
+    headers: getAuthHeaders(),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.detail || data?.message || "Failed to fetch orders");
+  }
+
+  return data.orders || [];
 }
 
 // export async function sendChatToBackend(message: string, userId: string) {

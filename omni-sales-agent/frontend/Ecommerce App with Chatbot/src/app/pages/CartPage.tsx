@@ -24,6 +24,18 @@ export function CartPage() {
 
   useEffect(() => {
     loadData();
+
+    const syncCart = () => {
+      loadData();
+    };
+
+    window.addEventListener("storage", syncCart);
+    window.addEventListener("focus", syncCart);
+
+    return () => {
+      window.removeEventListener("storage", syncCart);
+      window.removeEventListener("focus", syncCart);
+    };
   }, []);
 
   const loadData = async () => {

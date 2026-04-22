@@ -51,8 +51,8 @@ export function ProfilePage() {
   if (!user) return null;
 
   // ✅ SAFE FALLBACKS (no backend? no crash 😌)
-  const loyaltyPoints = user.loyaltyPoints ?? 0;
-  const memberSince = user.memberSince ?? new Date();
+  const loyaltyPoints = user.loyalty?.points ?? user.loyaltyPoints ?? 0;
+  const memberSince = user.memberSince ?? user.created_at ?? new Date();
 
   // ✅ FIXED LOGIC (handles 0 correctly)
   const remainder = loyaltyPoints % 500;

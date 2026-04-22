@@ -24,6 +24,8 @@ def response_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     if context == "order_summary":
         response = format_order_summary(state)
+    elif context == "choose_payment_method":
+        response = format_choose_payment_method(state)
     elif context == "reservation_summary":
         response = format_reservation_summary(state)
     elif context == "payment_retry":
@@ -47,7 +49,7 @@ def format_order_summary(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Formats checkout confirmation with order summary.
     """
-    loyalty_data = state.get("loyalty_data", {})
+    loyalty_data = state.get("loyalty_data") or {}
     cart_items = state.get("cart_items", [])
     
     return {
@@ -69,7 +71,7 @@ def format_reservation_summary(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Formats reservation confirmation.
     """
-    inventory_status = state.get("inventory_status", {})
+    inventory_status = state.get("inventory_status") or {}
     cart_items = state.get("cart_items", [])
     location = state.get("location", {})
     
@@ -87,11 +89,26 @@ def format_payment_retry(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Formats payment retry message.
     """
-    payment_status = state.get("payment_status", {})
+    payment_status = state.get("payment_status") or {}
+    payment_method = payment_status.get("payment_method") or state.get("payment_method") or "UPI"
     
     return {
-        "message": f"Payment failed: {payment_status.get('message', 'Unknown error')}",
-        "prompt": "Would you like to retry or try a different payment method?"
+        "message": f"Payment via {payment_method} failed: {payment_status.get('message', 'Unknown error')}",
+        "prompt": "Would you like to retry or choose a different mock payment method?"
+    }
+
+
+def format_choose_payment_method(state: Dict[str, Any]) -> Dict[str, Any]:
+    loyalty_data = state.get("loyalty_data") or {}
+    final_amount = loyalty_data.get("final_amount", 0)
+
+    return {
+        "message": "Please choose a payment method to complete your order.",
+        "data": {
+            "available_payment_methods": ["UPI", "CARD", "COD"],
+            "final_amount": final_amount,
+        },
+        "prompt": "You can reply with: UPI, Card, or Cash on Delivery."
     }
 
 
@@ -99,7 +116,7 @@ def format_error_response(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Formats generic error response.
     """
-    error = state.get("last_error", {})
+    error = state.get("last_error") or {}
 
     if error.get("code") == "NO_MATCHING_PRODUCTS":
         product_query = state.get("intent_entities", {}).get("product_query")
@@ -176,7 +193,7 @@ def format_default_response(state: Dict[str, Any]) -> Dict[str, Any]:
         }
     
     elif last_worker == "inventory_agent":
-        inventory_status = state.get("inventory_status", {})
+        inventory_status = state.get("inventory_status") or {}
         inventory_verified = state.get("inventory_verified", False)
 
         if len(inventory_status) == 1:
@@ -217,7 +234,7 @@ def format_default_response(state: Dict[str, Any]) -> Dict[str, Any]:
         }
     
     elif last_worker == "loyalty_offers_agent":
-        loyalty_data = state.get("loyalty_data", {})
+        loyalty_data = state.get("loyalty_data") or {}
         return {
             "message": f"Your current loyalty tier: {loyalty_data.get('new_tier', 'Silver')}",
             "data": {
@@ -227,11 +244,14 @@ def format_default_response(state: Dict[str, Any]) -> Dict[str, Any]:
         }
     
     elif last_worker == "payment_agent":
-        payment_status = state.get("payment_status", {})
+        payment_status = state.get("payment_status") or {}
         if payment_status.get("success"):
             return {
-                "message": "Payment successful!",
-                "data": {"transaction_id": payment_status.get("transaction_id")}
+                "message": f"Payment successful via {payment_status.get('payment_method', 'UPI')}.",
+                "data": {
+                    "transaction_id": payment_status.get("transaction_id"),
+                    "gateway": payment_status.get("gateway", "mock")
+                }
             }
         else:
             return {
@@ -240,13 +260,35 @@ def format_default_response(state: Dict[str, Any]) -> Dict[str, Any]:
             }
     
     elif last_worker == "post_purchase_agent":
+        order_status = state.get("order_status") or {}
+        payment_status = state.get("payment_status") or {}
+        checkout_points = order_status.get("points_earned_at_checkout", 0)
+        bonus_points = order_status.get("bonus_points", 0)
+        loyalty_total = order_status.get("loyalty_points_total")
+        loyalty_tier = order_status.get("loyalty_tier")
+
+        message = "Order placed successfully! Your payment was completed."
+        if checkout_points or bonus_points:
+            message += f" You earned {checkout_points} checkout points"
+            if bonus_points:
+                message += f" and {bonus_points} bonus points"
+            message += "."
+        if loyalty_total is not None:
+            message += f" Your total loyalty points are now {loyalty_total}."
+
         return {
-            "message": "Order confirmed! You'll receive tracking details soon.",
-            "data": state.get("order_status", {})
+            "message": message,
+            "data": {
+                **order_status,
+                "payment_method": payment_status.get("payment_method"),
+                "transaction_id": payment_status.get("transaction_id"),
+                "loyalty_points_total": loyalty_total,
+                "loyalty_tier": loyalty_tier,
+            }
         }
 
     elif last_worker == "fulfilment_agent":
-        order_status = state.get("order_status", {})
+        order_status = state.get("order_status") or {}
         status = order_status.get("status")
         if status == "FULFILLED":
             return {

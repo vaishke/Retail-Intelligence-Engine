@@ -111,6 +111,40 @@ class CartService:
         }
 
     @staticmethod
+    def clear_cart(user_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        user_oid = ObjectId(user_id)
+        user = users_collection.find_one({"_id": user_oid})
+        if not user:
+            return {"success": False, "message": "User not found"}
+
+        users_collection.update_one(
+            {"_id": user_oid},
+            {
+                "$set": {
+                    "cart.items": [],
+                    "cart.total": 0,
+                    "cart.updated_at": datetime.utcnow(),
+                }
+            },
+        )
+
+        session_filter: Dict[str, Any] = {"user_id": user_id}
+        if session_id:
+            session_filter["_id"] = session_id
+
+        sessions_collection.update_many(
+            session_filter,
+            {
+                "$set": {
+                    "context.selected_products": [],
+                },
+                "$currentDate": {"metadata.last_updated": True},
+            },
+        )
+
+        return {"success": True, "cart": [], "total": 0}
+
+    @staticmethod
     def resolve_product_reference(
         product_query: str,
         recommended_items: Optional[List[Dict[str, Any]]] = None,

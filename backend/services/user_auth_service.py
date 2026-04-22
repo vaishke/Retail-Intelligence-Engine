@@ -79,11 +79,7 @@ class UserAuthService:
         return {
             "success": True,
             "token": token,
-            "user": {
-                "user_id": str(user["_id"]),
-                "name": user.get("name"),
-                "email": user.get("email")
-            }
+            "user": UserAuthService._serialize_user(user)
         }
 
     @staticmethod
@@ -98,17 +94,31 @@ class UserAuthService:
 
             return {
                 "success": True,
-                "user": {
-                    "user_id": str(user["_id"]),
-                    "name": user.get("name"),
-                    "email": user.get("email")
-                }
+                "user": UserAuthService._serialize_user(user)
             }
 
         except jwt.ExpiredSignatureError:
             return {"success": False, "reason": "TOKEN_EXPIRED"}
         except jwt.InvalidTokenError:
             return {"success": False, "reason": "INVALID_TOKEN"}
+
+    @staticmethod
+    def _serialize_user(user):
+        loyalty = user.get("loyalty", {})
+        return {
+            "user_id": str(user["_id"]),
+            "name": user.get("name"),
+            "email": user.get("email"),
+            "loyalty": {
+                "tier": loyalty.get("tier", "Bronze"),
+                "points": loyalty.get("points", 0),
+            },
+            "loyaltyPoints": loyalty.get("points", 0),
+            "memberSince": user.get("created_at"),
+            "created_at": user.get("created_at"),
+            "past_purchases": user.get("past_purchases", []),
+            "payment_methods": user.get("payment_methods", []),
+        }
     
 def verify_token(token: str):
     print("TOKEN RECEIVED:", token)

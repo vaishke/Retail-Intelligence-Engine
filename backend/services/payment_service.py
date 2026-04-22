@@ -4,6 +4,13 @@ agent = PaymentAgent()
 
 
 class PaymentService:
+    @staticmethod
+    def get_supported_methods():
+        return {
+            "success": True,
+            "gateway": "mock",
+            "methods": ["UPI", "CARD", "COD", "NETBANKING", "WALLET"]
+        }
 
     @staticmethod
     def process_payment_service(data: dict):

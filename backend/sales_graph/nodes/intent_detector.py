@@ -95,13 +95,16 @@ def classify_intent_rules(message: str) -> str:
     if any(w in message for w in ["discount", "offer", "coupon", "deal"]):
         return "offer_inquiry"
 
+    if any(w in message for w in ["payment mode", "payment method", "do payment", "make payment"]):
+        return "payment_method_selection"
+
+    if any(w in message for w in ["upi", "card", "cash"]):
+        return "payment_method_selection"
+
     if any(w in message for w in ["buy", "checkout", "pay", "order"]):
         if any(w in message for w in ["yes", "confirm", "proceed"]):
             return "checkout_confirmation"
         return "checkout_intent"
-
-    if any(w in message for w in ["upi", "card", "cash"]):
-        return "payment_method_selection"
 
     if any(w in message for w in ["track", "status", "delivery"]):
         return "order_tracking"
@@ -235,6 +238,23 @@ def extract_entities_rules(message: str) -> Dict[str, Any]:
     tags = [tag for tag in style_keywords if tag in message]
     if tags:
         entities["tags"] = tags
+
+    payment_method_map = {
+        "upi": "UPI",
+        "credit card": "CARD",
+        "debit card": "CARD",
+        "card": "CARD",
+        "cash on delivery": "COD",
+        "cod": "COD",
+        "cash": "COD",
+        "wallet": "WALLET",
+        "net banking": "NETBANKING",
+        "netbanking": "NETBANKING",
+    }
+    for keyword, method in payment_method_map.items():
+        if keyword in message:
+            entities["payment_method"] = method
+            break
 
     return entities
 

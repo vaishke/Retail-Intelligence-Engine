@@ -1,8 +1,28 @@
-from db.database import inventory_collection, orders_collection, shipments_collection, invoices_collection, notifications_collection
+import random
+
+from db.database import inventory_collection, orders_collection, shipments_collection, invoices_collection, notifications_collection, users_collection
 from bson import ObjectId
 from datetime import datetime
+from services.cart_service import CartService
 
 class PostPurchaseAgent:
+    BONUS_POINTS_RANGE = (10, 50)
+    TIER_THRESHOLDS = {
+        "Bronze": 0,
+        "Silver": 500,
+        "Gold": 5000,
+        "Platinum": 15000,
+    }
+
+    @staticmethod
+    def calculate_tier(total_points):
+        if total_points >= PostPurchaseAgent.TIER_THRESHOLDS["Platinum"]:
+            return "Platinum"
+        if total_points >= PostPurchaseAgent.TIER_THRESHOLDS["Gold"]:
+            return "Gold"
+        if total_points >= PostPurchaseAgent.TIER_THRESHOLDS["Silver"]:
+            return "Silver"
+        return "Bronze"
 
     @staticmethod
     def confirm_order(order_id, transaction_id):
@@ -14,7 +34,8 @@ class PostPurchaseAgent:
             return {
                 "order_id": str(order["_id"]),
                 "status": "already_confirmed",
-                "message": "Order was already confirmed"
+                "message": "Order was already confirmed",
+                "bonus_points": order.get("loyalty_bonus_points", 0)
             }
 
         orders_collection.update_one(
@@ -34,6 +55,57 @@ class PostPurchaseAgent:
             "order_id": str(order["_id"]),
             "status": "confirmed",
             "message": "Order confirmed successfully"
+        }
+
+    @staticmethod
+    def award_bonus_loyalty_points(user_id, order_id):
+        user_oid = ObjectId(user_id)
+        order_oid = ObjectId(order_id)
+
+        order = orders_collection.find_one({"_id": order_oid}, {"loyalty_bonus_points": 1})
+        if not order:
+            raise ValueError("Order not found while awarding loyalty points")
+
+        existing_bonus = order.get("loyalty_bonus_points")
+        if existing_bonus is not None:
+            user = users_collection.find_one({"_id": user_oid}, {"loyalty": 1}) or {}
+            total_points = user.get("loyalty", {}).get("points", 0)
+            return {
+                "bonus_points": existing_bonus,
+                "new_total_points": total_points,
+                "tier": user.get("loyalty", {}).get("tier", "Bronze"),
+                "already_awarded": True,
+            }
+
+        bonus_points = random.randint(*PostPurchaseAgent.BONUS_POINTS_RANGE)
+
+        user = users_collection.find_one({"_id": user_oid}, {"loyalty": 1, "past_purchases": 1})
+        if not user:
+            raise ValueError("User not found while awarding loyalty points")
+
+        current_points = user.get("loyalty", {}).get("points", 0)
+        updated_points = current_points + bonus_points
+        updated_tier = PostPurchaseAgent.calculate_tier(updated_points)
+
+        users_collection.update_one(
+            {"_id": user_oid},
+            {
+                "$inc": {"loyalty.points": bonus_points},
+                "$set": {"loyalty.tier": updated_tier},
+                "$addToSet": {"past_purchases": str(order_oid)},
+            }
+        )
+
+        orders_collection.update_one(
+            {"_id": order_oid},
+            {"$set": {"loyalty_bonus_points": bonus_points}}
+        )
+
+        return {
+            "bonus_points": bonus_points,
+            "new_total_points": updated_points,
+            "tier": updated_tier,
+            "already_awarded": False,
         }
 
     @staticmethod
@@ -149,8 +221,7 @@ class PostPurchaseAgent:
                 return {"success": False, "message": f"Invalid quantity for product_id {item.get('product_id')}"}
 
         try:
-            PostPurchaseAgent.confirm_order(input_json["order_id"], input_json["transaction_id"])
-            PostPurchaseAgent.reduce_inventory(delivery_address["city"], cart_items)
+            confirmation = PostPurchaseAgent.confirm_order(input_json["order_id"], input_json["transaction_id"])
             shipment_json = PostPurchaseAgent.create_shipment(
                 input_json["order_id"],
                 input_json["user_id"],
@@ -162,13 +233,26 @@ class PostPurchaseAgent:
                 input_json["final_amount"]
             )
             PostPurchaseAgent.send_notification(input_json["user_id"], input_json["order_id"])
+            loyalty_bonus = PostPurchaseAgent.award_bonus_loyalty_points(
+                input_json["user_id"],
+                input_json["order_id"]
+            )
+            cart_clear_result = CartService.clear_cart(
+                input_json["user_id"],
+                input_json.get("session_id")
+            )
 
             return {
                 "success": True,
                 "order_id": input_json["order_id"],
                 "shipment_id": shipment_json.get("shipment_id"),
                 "invoice_id": invoice_json.get("invoice_id"),
-                "message": "Order confirmed and post-purchase steps completed"
+                "bonus_points": loyalty_bonus.get("bonus_points", 0),
+                "loyalty_points_total": loyalty_bonus.get("new_total_points"),
+                "loyalty_tier": loyalty_bonus.get("tier"),
+                "cart_cleared": cart_clear_result.get("success", False),
+                "message": "Order confirmed and post-purchase steps completed",
+                "confirmation_status": confirmation.get("status"),
             }
 
         except Exception as e:

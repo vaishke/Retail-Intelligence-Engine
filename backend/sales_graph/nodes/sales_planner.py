@@ -176,6 +176,99 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
     
     # ── Checkout Confirmation ───────────────────────────────────────
     if intent == "checkout_confirmation":
+        chosen_payment_method = state.get("intent_entities", {}).get("payment_method") or state.get("payment_method")
+
+        if state.get("last_worker") == "payment_agent":
+            payment = state.get("payment_status") or {}
+            if payment.get("success"):
+                return {
+                    "next_action": "fulfilment_agent",
+                    "await_confirmation": False,
+                    "confirmation_context": None,
+                    "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
+                }
+            return {
+                "next_action": "respond",
+                "await_confirmation": False,
+                "confirmation_context": "payment_retry"
+            }
+
+        if state.get("last_worker") == "fulfilment_agent":
+            return {
+                "next_action": "post_purchase_agent",
+                "await_confirmation": False,
+                "confirmation_context": None,
+                "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
+            }
+
+        if state.get("last_worker") == "post_purchase_agent":
+            return {
+                "next_action": "respond",
+                "await_confirmation": False,
+                "confirmation_context": None
+            }
+
+        if not chosen_payment_method:
+            return {
+                "next_action": "respond",
+                "await_confirmation": True,
+                "confirmation_context": "choose_payment_method"
+            }
+
+        return {
+            "next_action": "payment_agent",
+            "await_confirmation": False,
+            "confirmation_context": None,
+            "silent_chains_this_turn": state.get("silent_chains_this_turn", 0)
+        }
+
+    if intent == "payment_method_selection":
+        if not state.get("loyalty_data"):
+            return {
+                "next_action": "respond",
+                "await_confirmation": False,
+                "confirmation_context": "general_query"
+            }
+
+        chosen_payment_method = state.get("intent_entities", {}).get("payment_method") or state.get("payment_method")
+
+        if state.get("last_worker") == "payment_agent":
+            payment = state.get("payment_status") or {}
+            if payment.get("success"):
+                return {
+                    "next_action": "fulfilment_agent",
+                    "await_confirmation": False,
+                    "confirmation_context": None,
+                    "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
+                }
+            return {
+                "next_action": "respond",
+                "await_confirmation": False,
+                "confirmation_context": "payment_retry"
+            }
+
+        if state.get("last_worker") == "fulfilment_agent":
+            return {
+                "next_action": "post_purchase_agent",
+                "await_confirmation": False,
+                "confirmation_context": None,
+                "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
+            }
+
+        if state.get("last_worker") == "post_purchase_agent":
+            return {
+                "next_action": "respond",
+                "await_confirmation": False,
+                "confirmation_context": None
+            }
+
+        if not chosen_payment_method:
+            return {
+                "next_action": "respond",
+                "await_confirmation": True,
+                "confirmation_context": "choose_payment_method"
+            }
+
         return {
             "next_action": "payment_agent",
             "await_confirmation": False,
@@ -205,7 +298,7 @@ def handle_retry_logic(state: Dict[str, Any]) -> Dict[str, Any] | None:
     Checks if the last error is retryable and hasn't exceeded max retries.
     Returns routing decision or None.
     """
-    error = state.get("last_error", {})
+    error = state.get("last_error") or {}
     worker = error.get("worker")
     retry_count = state.get("retry_count", {})
     
@@ -297,7 +390,7 @@ def post_worker_evaluation(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # Rule: payment_agent → fulfilment_agent (if payment captured)
     if last_worker == "payment_agent":
-        payment = state.get("payment_status", {})
+        payment = state.get("payment_status") or {}
         if payment.get("success"):
             return {
                 "next_action": "fulfilment_agent",

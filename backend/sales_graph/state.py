@@ -56,6 +56,8 @@ class SessionState(TypedDict, total=False):
     # Structure: {success, transaction_id, amount, payment_method, message}
     
     payment_idempotency_key: Optional[str]  # Generated once per cart state (see design doc §12)
+    payment_method: Optional[str]           # Selected payment method for the current checkout
+    payment_details: Optional[Dict[str, Any]]
     
     # ── Orchestration Control ───────────────────────────────────────
     current_intent: str                 # Latest classified intent (from intent_detector)
@@ -106,6 +108,8 @@ def create_initial_state(user_id: str, session_id: str, channel: str, message: s
         order_status=None,
         payment_status=None,
         payment_idempotency_key=None,
+        payment_method=None,
+        payment_details=None,
         current_intent="",
         intent_entities={},
         next_action="",

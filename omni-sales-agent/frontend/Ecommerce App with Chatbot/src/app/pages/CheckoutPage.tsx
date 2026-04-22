@@ -24,6 +24,18 @@ export function CheckoutPage() {
 
   useEffect(() => {
     loadData();
+
+    const syncCheckoutCart = () => {
+      loadData();
+    };
+
+    window.addEventListener("storage", syncCheckoutCart);
+    window.addEventListener("focus", syncCheckoutCart);
+
+    return () => {
+      window.removeEventListener("storage", syncCheckoutCart);
+      window.removeEventListener("focus", syncCheckoutCart);
+    };
   }, []);
 
   const loadData = async () => {
@@ -81,10 +93,11 @@ export function CheckoutPage() {
 
       setOrderId(res.order_id || `ORD-${Date.now()}`);
       setOrderComplete(true);
+      window.dispatchEvent(new Event("storage"));
 
       toast.success('Order placed successfully!');
-    } catch (err) {
-      toast.error('Failed to place order');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to place order');
     } finally {
       setIsProcessing(false);
     }

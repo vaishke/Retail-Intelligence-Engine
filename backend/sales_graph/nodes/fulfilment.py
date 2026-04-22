@@ -61,7 +61,8 @@ def fulfilment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # Build order input for FulfillmentAgent
         order_input = {
             "user_id": ObjectId(user_id) if isinstance(user_id, str) else user_id,
-            "session_id": ObjectId(session_id) if isinstance(session_id, str) else session_id,
+            # Chat sessions use UUID strings, not Mongo ObjectIds.
+            "session_id": session_id,
             "items": formatted_items,
             "fulfillment_type": state.get("fulfillment_type", "SHIP_TO_HOME"),
             "store_location": location.get("store_id"),

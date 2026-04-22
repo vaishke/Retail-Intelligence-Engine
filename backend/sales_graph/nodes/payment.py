@@ -56,9 +56,10 @@ def payment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         ).hexdigest()[:16]
         idempotency_key = f"{state['session_id']}_{cart_hash}"
     
-    # Get payment method from state (set by user or default to UPI)
-    payment_method = state.get("payment_method", "UPI")
-    payment_details = state.get("payment_details")
+    # Prefer an explicit selection from the latest user turn, then fall back to saved state.
+    selected_method = state.get("intent_entities", {}).get("payment_method")
+    payment_method = selected_method or state.get("payment_method") or "UPI"
+    payment_details = state.get("payment_details") or {}
     
     try:
         # Call your existing payment agent
@@ -74,6 +75,8 @@ def payment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 "payment_status": result,
                 "payment_idempotency_key": idempotency_key,
+                "payment_method": payment_method,
+                "payment_details": payment_details,
                 "last_worker": "payment_agent",
                 "agent_call_history": state.get("agent_call_history", []) + ["payment_agent"],
                 "last_error": None
@@ -83,6 +86,8 @@ def payment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 "payment_status": result,
                 "payment_idempotency_key": idempotency_key,
+                "payment_method": payment_method,
+                "payment_details": payment_details,
                 "last_worker": "payment_agent",
                 "agent_call_history": state.get("agent_call_history", []) + ["payment_agent"],
                 "last_error": {
@@ -98,6 +103,8 @@ def payment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "payment_status": None,
             "payment_idempotency_key": idempotency_key,
+            "payment_method": payment_method,
+            "payment_details": payment_details,
             "last_worker": "payment_agent",
             "agent_call_history": state.get("agent_call_history", []) + ["payment_agent"],
             "last_error": {

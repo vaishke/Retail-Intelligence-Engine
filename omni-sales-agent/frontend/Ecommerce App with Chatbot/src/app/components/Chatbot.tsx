@@ -28,6 +28,7 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
       ? {
           message: msg.payload?.message || msg.message,
           products: msg.payload?.data?.recommendations || [],
+          data: msg.payload?.data || {},
           prompt: msg.payload?.prompt || '',
         }
       : msg.message,
@@ -152,10 +153,11 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
         id: (Date.now() + 1).toString(),
         role: 'agent',
         content: typeof res.response === 'string'
-        ? { message: res.response, products: [] }
+        ? { message: res.response, products: [], data: {} }
         : {
             message: res.response?.message || 'No response',
-            products: res.state?.recommended_items || [],
+            products: res.response?.data?.recommendations || res.state?.recommended_items || [],
+            data: res.response?.data || {},
             prompt: res.response?.prompt || '',
           },
         timestamp: new Date().toISOString(),
@@ -293,6 +295,77 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
                                   ₹{p.price}
                                 </p>
                               </Card>
+                            ))}
+                          </div>
+                        )}
+
+                        {(msg.content as any).data?.items?.length > 0 && (
+                          <div className="rounded-lg border border-border/60 bg-background/70 p-3 space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Order Details
+                            </p>
+                            <div className="space-y-1">
+                              {(msg.content as any).data.items.map((item: any, index: number) => (
+                                <div
+                                  key={`${item.product_id || item.name || 'item'}-${index}`}
+                                  className="flex items-center justify-between gap-3 text-xs"
+                                >
+                                  <span className="font-medium">
+                                    {item.name || item.product_name || 'Product'} x {item.qty || item.quantity || 1}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    Rs. {item.price ?? 0}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {typeof (msg.content as any).data.cart_total !== 'undefined' && (
+                              <div className="space-y-1 border-t pt-2 text-xs">
+                                <div className="flex justify-between">
+                                  <span>Cart total</span>
+                                  <span>Rs. {(msg.content as any).data.cart_total}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Discount</span>
+                                  <span>Rs. {(msg.content as any).data.discount || 0}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Points used</span>
+                                  <span>{(msg.content as any).data.points_used || 0}</span>
+                                </div>
+                                <div className="flex justify-between font-semibold">
+                                  <span>Final amount</span>
+                                  <span>Rs. {(msg.content as any).data.final_amount || 0}</span>
+                                </div>
+                                <div className="flex justify-between text-muted-foreground">
+                                  <span>Points earned</span>
+                                  <span>{(msg.content as any).data.points_earned || 0}</span>
+                                </div>
+                                {(msg.content as any).data.new_tier && (
+                                  <div className="flex justify-between text-muted-foreground">
+                                    <span>Tier</span>
+                                    <span>{(msg.content as any).data.new_tier}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {(msg.content as any).data?.cart_items?.length > 0 && (
+                          <div className="rounded-lg border border-border/60 bg-background/70 p-3 space-y-1">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Cart
+                            </p>
+                            {(msg.content as any).data.cart_items.map((item: any, index: number) => (
+                              <div
+                                key={`${item.product_id || item.name || 'cart'}-${index}`}
+                                className="flex items-center justify-between gap-3 text-xs"
+                              >
+                                <span>{item.name || 'Product'} x {item.qty || item.quantity || 1}</span>
+                                <span className="text-muted-foreground">Rs. {item.price ?? 0}</span>
+                              </div>
                             ))}
                           </div>
                         )}

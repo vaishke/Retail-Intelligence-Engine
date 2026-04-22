@@ -4,7 +4,7 @@ import { ProductCard } from '../components/ProductCard';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Product } from '../types/product';
-import { fetchProducts } from '../../services/api';
+import { fetchOrders, fetchProducts } from '../../services/api';
 import { Sparkles, TrendingUp, Award, MessageSquare, Search } from 'lucide-react';
 import { Chatbot } from '../components/Chatbot';
 
@@ -12,6 +12,7 @@ export function HomePage() {
   const [user, setUser] = useState<any>(null);
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [orderCount, setOrderCount] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -46,6 +47,30 @@ export function HomePage() {
     fetchProducts().then((data) => {
       setProducts(data);
     });
+  }, []);
+
+  useEffect(() => {
+    const loadOrders = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        setOrderCount(0);
+        return;
+      }
+
+      try {
+        const orders = await fetchOrders();
+        setOrderCount(orders.length);
+      } catch {
+        setOrderCount(0);
+      }
+    };
+
+    loadOrders();
+    const handleStorageChange = () => {
+      loadOrders();
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   const featuredProducts = products.filter(p => p.featured);
@@ -116,9 +141,7 @@ export function HomePage() {
             <TrendingUp className="text-green-600" />
             <div>
               <p className="text-sm text-muted-foreground">Active Orders</p>
-              <p className="text-2xl font-bold">
-                {JSON.parse(localStorage.getItem('orders') || '[]').length}
-              </p>
+              <p className="text-2xl font-bold">{orderCount}</p>
             </div>
           </CardContent>
         </Card>

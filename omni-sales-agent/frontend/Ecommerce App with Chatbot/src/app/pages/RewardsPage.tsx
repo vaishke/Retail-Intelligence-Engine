@@ -1,14 +1,57 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { mockCoupons, storage } from '../utils/mockData';
+import { mockCoupons } from '../utils/mockData';
 import { Gift, Tag, Award, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function RewardsPage() {
-  const user = storage.getUser();
+  const [user, setUser] = useState<any>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        navigate("/login");
+        return;
+      }
+
+      try {
+        const res = await fetch("http://localhost:8000/auth/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          navigate("/login");
+          return;
+        }
+
+        const data = await res.json();
+        if (data.user) {
+          setUser(data.user);
+          localStorage.setItem("user", JSON.stringify(data.user));
+        } else {
+          navigate("/login");
+        }
+      } catch (err) {
+        console.error(err);
+        navigate("/login");
+      }
+    };
+
+    fetchUser();
+  }, [navigate]);
 
   if (!user) return null;
+
+  const loyaltyPoints = user.loyalty?.points ?? user.loyaltyPoints ?? 0;
+  const pointsToNextTier = loyaltyPoints % 500 === 0 ? 500 : 500 - (loyaltyPoints % 500);
 
   const copyCoupon = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -31,20 +74,20 @@ export function RewardsPage() {
           <div className="grid md:grid-cols-3 gap-6">
             <div className="text-center p-6 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-lg">
               <p className="text-sm mb-2 opacity-90">Total Points</p>
-              <p className="text-5xl font-bold mb-2">{user.loyaltyPoints}</p>
+              <p className="text-5xl font-bold mb-2">{loyaltyPoints}</p>
               <p className="text-sm opacity-90">Available to redeem</p>
             </div>
             <div className="text-center p-6 border rounded-lg">
               <p className="text-sm text-muted-foreground mb-2">Redeemable Value</p>
               <p className="text-4xl font-bold mb-2">
-                ${Math.floor(user.loyaltyPoints / 100) * 10}
+                ${Math.floor(loyaltyPoints / 100) * 10}
               </p>
               <p className="text-sm text-muted-foreground">100 points = $10 off</p>
             </div>
             <div className="text-center p-6 border rounded-lg">
               <p className="text-sm text-muted-foreground mb-2">Points to Next Tier</p>
               <p className="text-4xl font-bold mb-2">
-                {500 - (user.loyaltyPoints % 500)}
+                {pointsToNextTier}
               </p>
               <p className="text-sm text-muted-foreground">Reach 500 for bonus reward</p>
             </div>
