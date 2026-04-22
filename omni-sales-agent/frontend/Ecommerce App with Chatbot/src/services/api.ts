@@ -12,6 +12,7 @@ export const startSession = async () => {
     body: JSON.stringify({ channel: "web" })
   });
 
+  if (!res.ok) throw new Error("Failed to start session");
   return res.json();
 };
 
@@ -26,6 +27,7 @@ export const sendChatToBackend = async (message: string, session_id: string) => 
     })
   });
 
+  if (!res.ok) throw new Error("Failed to send chat message");
   return res.json();
 };
 
@@ -34,6 +36,26 @@ export const getSessions = async () => {
     headers: getAuthHeaders()
   });
 
+  if (!res.ok) throw new Error("Failed to fetch sessions");
+  return res.json();
+};
+
+export const getSessionById = async (sessionId: string) => {
+  const res = await fetch(`${BASE_URL}/sales/session/${sessionId}`, {
+    headers: getAuthHeaders()
+  });
+
+  if (!res.ok) throw new Error("Failed to fetch session");
+  return res.json();
+};
+
+export const deleteSession = async (sessionId: string) => {
+  const res = await fetch(`${BASE_URL}/sales/session/${sessionId}`, {
+    method: "DELETE",
+    headers: getAuthHeaders()
+  });
+
+  if (!res.ok) throw new Error("Failed to delete session");
   return res.json();
 };
 

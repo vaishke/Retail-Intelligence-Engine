@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from './ui/sheet';
+import { fetchCart } from '../../services/api';
 
 interface HeaderProps {
   onChatClick: () => void;
@@ -37,6 +38,7 @@ export function Header({ onChatClick }: HeaderProps) {
 
         if (data.user) {
           setUser(data.user);
+          localStorage.setItem("user", JSON.stringify(data.user));
         } else {
           setUser(null);
         }
@@ -49,7 +51,8 @@ export function Header({ onChatClick }: HeaderProps) {
     fetchUser();
 
     const handleStorageChange = () => {
-      fetchUser();
+      const storedUser = localStorage.getItem("user");
+      setUser(storedUser ? JSON.parse(storedUser) : null);
     };
 
     window.addEventListener("storage", handleStorageChange);
@@ -63,18 +66,36 @@ export function Header({ onChatClick }: HeaderProps) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const updateCart = () => {
-      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-      setCartCount(cart.reduce((sum: number, item: any) => sum + item.quantity, 0));
+    const updateCart = async () => {
+      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = storedUser.user_id || storedUser.id;
+
+      if (!userId) {
+        setCartCount(0);
+        return;
+      }
+
+      try {
+        const cartRes = await fetchCart(userId);
+        const items = cartRes.cart || [];
+        setCartCount(items.reduce((sum: number, item: any) => sum + (item.quantity || item.qty || 0), 0));
+      } catch {
+        setCartCount(0);
+      }
     };
 
     updateCart();
-    const interval = setInterval(updateCart, 1000);
-    return () => clearInterval(interval);
+    const handleStorageChange = () => {
+      updateCart();
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.dispatchEvent(new Event("storage"));
     setUser(null);
     navigate("/login");
     window.location.reload(); // force UI sync

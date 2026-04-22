@@ -38,6 +38,7 @@ export function LoginPage() {
 
       // ✅ store token properly
       localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
       window.dispatchEvent(new Event("storage"));
       toast.success("Login successful!");
 

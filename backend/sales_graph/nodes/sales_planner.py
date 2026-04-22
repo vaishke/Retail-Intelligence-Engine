@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 MAX_RETRIES = {
     "recommendation_agent": 1,
     "inventory_agent": 2,
+    "cart_manager": 1,
     "loyalty_offers_agent": 1,
     "payment_agent": 2,
     "fulfilment_agent": 2,
@@ -61,8 +62,9 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
     
     # ── Discovery ───────────────────────────────────────────────────
     if intent == "discovery" or intent == "refine_recommendations":
-        # If already got recommendations (or failed), move to respond
-        if state.get("recommended_items") or state.get("last_worker") == "recommendation_agent":
+        # After the recommendation worker runs in the current turn, respond.
+        # On a fresh user turn, last_worker is reset in graph.py so we recompute.
+        if state.get("last_worker") == "recommendation_agent":
             return {
                 "next_action": "respond",
                 "await_confirmation": False,
@@ -77,6 +79,13 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
     
     # ── Availability Check ──────────────────────────────────────────
     if intent == "availability_check":
+        if state.get("last_worker") == "inventory_agent":
+            return {
+                "next_action": "respond",
+                "await_confirmation": False,
+                "confirmation_context": None
+            }
+
         if not state.get("cart_items") and not state.get("recommended_items"):
             # No items to check
             return {
@@ -86,6 +95,20 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
             }
         return {
             "next_action": "inventory_agent",
+            "await_confirmation": False,
+            "confirmation_context": None,
+            "silent_chains_this_turn": state.get("silent_chains_this_turn", 0)
+        }
+
+    if intent in {"add_to_cart", "remove_from_cart", "view_cart"}:
+        if state.get("last_worker") == "cart_manager":
+            return {
+                "next_action": "respond",
+                "await_confirmation": False,
+                "confirmation_context": None
+            }
+        return {
+            "next_action": "cart_manager",
             "await_confirmation": False,
             "confirmation_context": None,
             "silent_chains_this_turn": state.get("silent_chains_this_turn", 0)

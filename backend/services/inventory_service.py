@@ -4,19 +4,19 @@ from agents.inventory_agent import InventoryAgent
 class InventoryService:
 
     @staticmethod
-    def check_stock_service(sku, userLocation):
-        if not sku or not userLocation:
+    def check_stock_service(product_id, store_id=None):
+        if not product_id:
             return {
                 "success": False,
                 "reason": "MISSING_PARAMETERS",
-                "sku": sku or "",
+                "product_id": product_id or "",
                 "isAvailable": False
             }
 
         input_json = {
             "action": "check_stock",
-            "sku": sku,
-            "userLocation": userLocation
+            "product_id": product_id,
+            "store_id": store_id
         }
         return InventoryAgent.handle_request(input_json)
 
@@ -45,12 +45,12 @@ class InventoryService:
             return {
                 "success": False,
                 "reason": "MISSING_PARAMETERS",
-                "sku": "",
+                "product_id": "",
                 "isAvailable": False
             }
 
         input_json = {
             "action": "get_store_stock",
-            "sku": sku
+            "product_id": sku
         }
         return InventoryAgent.handle_request(input_json)

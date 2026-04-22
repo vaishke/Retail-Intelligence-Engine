@@ -159,7 +159,7 @@ class OfferLoyaltyAgent:
                 "amount": coupon_discount
             })
 
-        self.orders.insert_one(order_doc)
+        inserted = self.orders.insert_one(order_doc)
 
         # 9️⃣ Return response
         return {
@@ -171,7 +171,7 @@ class OfferLoyaltyAgent:
             "loyalty_points_earned": earned_points,
             "final_amount": final_amount,
             "new_tier": new_tier,
-            "order_id": order_doc["_id"]
+            "order_id": str(inserted.inserted_id)
         }
 
     # ------------------------

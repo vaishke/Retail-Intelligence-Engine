@@ -13,6 +13,7 @@ from routes.post_purchase_route import router as post_purchase_router
 from routes.fulfillment_routes import router as fulfillment_router
 from routes.debug_routes import router as debug_router
 from routes.user_auth_routes import router as auth_router
+from routes.cart_routes import router as cart_router
 
 from dotenv import load_dotenv
 import os
@@ -45,6 +46,7 @@ app.include_router(recommendation_router)
 app.include_router(post_purchase_router)
 app.include_router(fulfillment_router)
 app.include_router(auth_router)
+app.include_router(cart_router)
 
 @app.get("/", tags=["Health"])
 def root():

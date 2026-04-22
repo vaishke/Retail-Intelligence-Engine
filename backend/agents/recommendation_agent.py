@@ -1,5 +1,6 @@
 from bson import ObjectId, Regex
 from db.database import users_collection, products_collection
+import re
 
 
 class RecommendationAgent:
@@ -17,6 +18,7 @@ class RecommendationAgent:
             }
 
         query = RecommendationAgent._build_query(constraints)
+        top_k = max(1, min(int(top_k or 5), 10))
 
         if exclude_product_ids:
             exclude_oids = [ObjectId(pid) if not isinstance(pid, ObjectId) else pid for pid in exclude_product_ids]
@@ -36,7 +38,7 @@ class RecommendationAgent:
 
         applied_filters = {
             k: constraints[k]
-            for k in ["category", "subcategory", "tags", "price_range"]
+            for k in ["category", "subcategory", "tags", "price_range", "product_query", "colors"]
             if k in constraints
         }
 
@@ -48,63 +50,113 @@ class RecommendationAgent:
 
     @staticmethod
     def _build_query(constraints):
-        query = {"$or": []}
+        and_filters = []
+        text_clauses = []
 
         # Case-insensitive category match
         if constraints.get("category"):
-            query["$or"].append({"category": {"$regex": f"^{constraints['category']}$", "$options": "i"}})
+            text_clauses.append({"category": {"$regex": f"^{re.escape(constraints['category'])}$", "$options": "i"}})
 
         # Case-insensitive subcategory match
         if constraints.get("subcategory"):
-            query["$or"].append({"subcategory": {"$regex": f"^{constraints['subcategory']}$", "$options": "i"}})
+            text_clauses.append({"subcategory": {"$regex": f"^{re.escape(constraints['subcategory'])}$", "$options": "i"}})
 
         # Case-insensitive tag match
         if constraints.get("tags"):
-            query["$or"].append({"tags": {"$in": [Regex(tag, "i") for tag in constraints["tags"]]}})
+            text_clauses.append({"tags": {"$in": [Regex(tag, "i") for tag in constraints["tags"]]}})
+
+        if constraints.get("product_query"):
+            product_query = constraints["product_query"].strip()
+            phrase_regex = Regex(re.escape(product_query), "i")
+            text_clauses.extend([
+                {"name": phrase_regex},
+                {"description": phrase_regex},
+                {"subcategory": phrase_regex},
+                {"category": phrase_regex},
+                {"tags": {"$in": [phrase_regex]}}
+            ])
 
         # Price range filter
         if constraints.get("price_range"):
-            query["price"] = {
-                "$gte": constraints["price_range"][0],
-                "$lte": constraints["price_range"][1]
-            }
+            and_filters.append({
+                "price": {
+                    "$gte": constraints["price_range"][0],
+                    "$lte": constraints["price_range"][1]
+                }
+            })
 
         # Color filter
         if constraints.get("colors"):
-            query["attributes.color"] = {"$in": constraints["colors"]}
+            and_filters.append({"attributes.color": {"$in": constraints["colors"]}})
 
-        # If no $or conditions, remove it to avoid empty $or
-        if not query["$or"]:
-            query.pop("$or")
+        if text_clauses:
+            and_filters.append({"$or": text_clauses})
 
-        return query
+        if not and_filters:
+            return {}
+
+        if len(and_filters) == 1:
+            return and_filters[0]
+
+        return {"$and": and_filters}
 
     @staticmethod
     def _score_products(products, constraints):
         scored = []
+        product_query = (constraints.get("product_query") or "").strip().lower()
+        query_tokens = [token for token in re.findall(r"\w+", product_query) if len(token) > 1]
 
         for product in products:
-            score = 0
+            score = 0.0
             signals = []
+            name = (product.get("name") or "").lower()
+            description = (product.get("description") or "").lower()
+            category = (product.get("category") or "").lower()
+            subcategory = (product.get("subcategory") or "").lower()
+            tags = [tag.lower() for tag in product.get("tags", [])]
+            color = str(product.get("attributes", {}).get("color", "")).lower()
+
+            if product_query and product_query in name:
+                score += 12
+                signals.append("NAME_MATCH")
+
+            if product_query and product_query in description:
+                score += 8
+                signals.append("DESCRIPTION_MATCH")
+
+            token_hits = 0
+            for token in query_tokens:
+                if token in name:
+                    token_hits += 1
+                elif token in description or token in subcategory or token in category or token in tags:
+                    token_hits += 0.75
+
+            if token_hits:
+                score += token_hits * 3
+                signals.append("QUERY_MATCH")
 
             # Category/Subcategory/Tag scoring
-            if constraints.get("category") and product.get("category", "").lower() == constraints["category"].lower():
-                score += 3
+            if constraints.get("category") and category == constraints["category"].lower():
+                score += 5
                 signals.append("CATEGORY_MATCH")
 
-            if constraints.get("subcategory") and product.get("subcategory", "").lower() == constraints["subcategory"].lower():
-                score += 2
+            if constraints.get("subcategory") and subcategory == constraints["subcategory"].lower():
+                score += 4
                 signals.append("SUBCATEGORY_MATCH")
 
-            if constraints.get("tags") and set(map(str.lower, product.get("tags", []))).intersection(
+            if constraints.get("tags") and set(tags).intersection(
                 map(str.lower, constraints["tags"])
             ):
-                score += 2
+                score += 3
                 signals.append("TAG_MATCH")
+
+            if constraints.get("colors") and color in [c.lower() for c in constraints["colors"]]:
+                score += 2
+                signals.append("COLOR_MATCH")
 
             # Popularity
             rating = product.get("ratings", 0)
-            score += rating
+            score += min(rating, 5) * 0.3
             if rating >= 4:
                 signals.append("POPULAR")
 
@@ -117,7 +169,7 @@ class RecommendationAgent:
                 "ratings": rating,
                 "image": product.get("images")[0] if product.get("images") else None,
                 "score": round(score, 2),
-                "signals": signals,
+                "signals": list(dict.fromkeys(signals)),
                 "reason": RecommendationAgent._build_reason(signals)
             })
 
@@ -125,9 +177,27 @@ class RecommendationAgent:
 
     @staticmethod
     def _build_reason(signals):
-        if not signals:
+        unique_signals = list(dict.fromkeys(signals))
+
+        if not unique_signals:
             return "Popular product among users"
-        return "Matches your selected category, subcategory, or tags"
+
+        reason_map = {
+            "NAME_MATCH": "Matched your requested product",
+            "DESCRIPTION_MATCH": "Description closely matches your query",
+            "QUERY_MATCH": "Relevant to your search terms",
+            "CATEGORY_MATCH": "Matches your selected category",
+            "SUBCATEGORY_MATCH": "Matches your selected style",
+            "TAG_MATCH": "Matches your preferred attributes",
+            "COLOR_MATCH": "Matches your selected color",
+            "POPULAR": "Popular among users",
+        }
+
+        reasons = [reason_map[signal] for signal in unique_signals if signal in reason_map]
+        if not reasons:
+            return "Popular product among users"
+
+        return ", ".join(reasons[:2])
 
     @staticmethod
     def handle_request(recommendation_request):

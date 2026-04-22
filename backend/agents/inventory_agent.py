@@ -1,6 +1,7 @@
 from pymongo import ReturnDocument
 from bson import ObjectId
 from db.database import inventory_collection, products_collection
+from datetime import datetime
 
 
 class InventoryAgent:

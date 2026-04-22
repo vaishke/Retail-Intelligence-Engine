@@ -29,13 +29,13 @@ def response_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     elif context == "payment_retry":
         response = format_payment_retry(state)
     elif context == "empty_cart":
-        response = {"message": "Your cart is empty. Would you like some recommendations?"}
+        response = {"message": "Your cart is empty. Would you like some recommendations?", "data": {}}
     elif context == "no_items_to_check":
-        response = {"message": "Please add items to your cart or get recommendations first."}
+        response = {"message": "Please add items to your cart or get recommendations first.", "data": {}}
     elif context == "error_response":
         response = format_error_response(state)
     elif context == "max_chains_reached":
-        response = {"message": "Processing... Please wait while I gather information for you."}
+        response = {"message": "Processing... Please wait while I gather information for you.", "data": {}}
     else:
         # Default response based on last worker
         response = format_default_response(state)
@@ -100,10 +100,32 @@ def format_error_response(state: Dict[str, Any]) -> Dict[str, Any]:
     Formats generic error response.
     """
     error = state.get("last_error", {})
+
+    if error.get("code") == "NO_MATCHING_PRODUCTS":
+        product_query = state.get("intent_entities", {}).get("product_query")
+        if product_query:
+            return {
+                "message": f"I couldn't find an exact match for '{product_query}'.",
+                "prompt": "Try a broader search, a different category, or a price range and I'll look again.",
+                "data": {}
+            }
+        return {
+            "message": "I couldn't find matching products for that request.",
+            "prompt": "Try a broader search, a different category, or a price range and I'll look again.",
+            "data": {}
+        }
+
+    if error.get("code") == "PRODUCT_NOT_RESOLVED":
+        return {
+            "message": "I couldn't figure out which product you meant.",
+            "prompt": "Try naming the product again or pick one from the latest recommendations.",
+            "data": {}
+        }
     
     return {
         "message": f"Sorry, something went wrong: {error.get('message', 'Unknown error')}",
-        "prompt": "Please try again or let me know if you need help with something else."
+        "prompt": "Please try again or let me know if you need help with something else.",
+        "data": {}
     }
 
 
@@ -120,19 +142,79 @@ def format_default_response(state: Dict[str, Any]) -> Dict[str, Any]:
             "data": {"recommendations": recommended_items},
             "prompt": "Would you like to add any to your cart or check availability?"
         }
+
+    elif last_worker == "cart_manager":
+        cart_items = state.get("cart_items", [])
+        intent = state.get("current_intent")
+        product_query = state.get("intent_entities", {}).get("product_query")
+
+        if intent == "view_cart":
+            if not cart_items:
+                return {
+                    "message": "Your cart is empty.",
+                    "data": {"cart_items": []},
+                    "prompt": "Would you like some recommendations?"
+                }
+            return {
+                "message": f"You have {len(cart_items)} item(s) in your cart.",
+                "data": {"cart_items": cart_items},
+                "prompt": "Would you like me to check availability or proceed to checkout?"
+            }
+
+        if intent == "remove_from_cart":
+            return {
+                "message": f"Removed {product_query or 'that item'} from your cart.",
+                "data": {"cart_items": cart_items},
+                "prompt": "Anything else you want to update?"
+            }
+
+        added_item = cart_items[-1] if cart_items else None
+        return {
+            "message": f"Added {added_item.get('name', 'that item')} to your cart." if added_item else "Added the item to your cart.",
+            "data": {"cart_items": cart_items},
+            "prompt": "Would you like me to check availability or continue shopping?"
+        }
     
     elif last_worker == "inventory_agent":
+        inventory_status = state.get("inventory_status", {})
         inventory_verified = state.get("inventory_verified", False)
+
+        if len(inventory_status) == 1:
+            item = next(iter(inventory_status.values()))
+            product_name = item.get("productName", "This item")
+            if item.get("isAvailable"):
+                store_stock = item.get("storeStock")
+                if isinstance(store_stock, dict) and store_stock:
+                    best_store, best_qty = max(store_stock.items(), key=lambda entry: entry[1])
+                    return {
+                        "message": f"{product_name} is available.",
+                        "data": {"inventory": item},
+                        "prompt": f"I found stock at {best_store} ({best_qty} units). Would you like to add it to your cart or proceed to checkout?"
+                    }
+                return {
+                    "message": f"{product_name} is available.",
+                    "data": {"inventory": item},
+                    "prompt": f"There are {item.get('totalStock', 0)} units available. Would you like to proceed?"
+                }
+
+            return {
+                "message": f"{product_name} is currently out of stock.",
+                "data": {"inventory": item},
+                "prompt": "Would you like me to suggest alternatives?"
+            }
+
         if inventory_verified:
             return {
-                "message": "Great news! All items are in stock.",
+                "message": "Great news! All items in your cart are in stock.",
+                "data": {"inventory": inventory_status},
                 "prompt": "Would you like to proceed to checkout?"
             }
-        else:
-            return {
-                "message": "Some items are out of stock. Let me suggest alternatives.",
-                "prompt": None
-            }
+
+        return {
+            "message": "Some items are out of stock. Let me suggest alternatives.",
+            "prompt": None,
+            "data": {"inventory": inventory_status}
+        }
     
     elif last_worker == "loyalty_offers_agent":
         loyalty_data = state.get("loyalty_data", {})
@@ -162,9 +244,31 @@ def format_default_response(state: Dict[str, Any]) -> Dict[str, Any]:
             "message": "Order confirmed! You'll receive tracking details soon.",
             "data": state.get("order_status", {})
         }
+
+    elif last_worker == "fulfilment_agent":
+        order_status = state.get("order_status", {})
+        status = order_status.get("status")
+        if status == "FULFILLED":
+            return {
+                "message": "Your order has been fulfilled successfully.",
+                "data": order_status,
+                "prompt": "We'll continue with order confirmation and delivery updates."
+            }
+        if status == "PARTIALLY_FULFILLED":
+            return {
+                "message": "Some items in your order could not be fulfilled.",
+                "data": order_status,
+                "prompt": "Please review the fulfilled items before we continue."
+            }
+        return {
+            "message": "We couldn't fulfill your order right now.",
+            "data": order_status,
+            "prompt": "Would you like me to suggest alternatives or try a different store?"
+        }
     
     else:
         return {
             "message": "How can I help you today?",
-            "prompt": None
+            "prompt": None,
+            "data": {}
         }

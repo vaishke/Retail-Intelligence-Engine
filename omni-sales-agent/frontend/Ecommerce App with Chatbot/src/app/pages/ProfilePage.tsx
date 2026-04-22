@@ -7,7 +7,7 @@ import { Progress } from '../components/ui/progress';
 import { useEffect, useState } from 'react';
 
 export function ProfilePage() {
-  const navigate = useNavigate(); // ✅ moved up (you were using it before declaring)
+  const navigate = useNavigate();  
 
   const [user, setUser] = useState<any>(null);
 

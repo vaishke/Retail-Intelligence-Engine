@@ -1,6 +1,7 @@
 from db.database import orders_collection
 from agents.inventory_agent import InventoryAgent
 from datetime import datetime
+from bson import ObjectId
 
 
 class FulfillmentAgent:
@@ -70,11 +71,13 @@ class FulfillmentAgent:
             success = False
             message = "No items fulfilled"
 
-        # Prepare order document according to schema
-        order_doc = {
+        order_id = order.get("order_id")
+        if isinstance(order_id, str):
+            order_id = ObjectId(order_id)
+        update_doc = {
             "user_id": order["user_id"],
             "session_id": order.get("session_id"),
-            "items": order["items"],  # must include product_id, qty, price
+            "items": order["items"],
             "discounts_applied": order.get("discounts_applied", []),
             "final_price": order.get("final_price", 0),
             "payment": order.get("payment", {"status": "PENDING", "method": None, "transaction_id": None, "updated_at": None}),
@@ -82,17 +85,29 @@ class FulfillmentAgent:
                 "type": fulfillment_type,
                 "status": status
             },
-            "status": status,
-            "created_at": datetime.utcnow(),
+            "status": status.lower(),
             "confirmed_at": datetime.utcnow() if fulfilled else None
         }
 
-        inserted_id = orders_collection.insert_one(order_doc).inserted_id
+        if order_id:
+            orders_collection.update_one(
+                {"_id": order_id},
+                {
+                    "$set": update_doc
+                }
+            )
+            persisted_order_id = order_id
+        else:
+            order_doc = {
+                **update_doc,
+                "created_at": datetime.utcnow(),
+            }
+            persisted_order_id = orders_collection.insert_one(order_doc).inserted_id
 
         # Return a response with fulfillment details
         fulfillment_response = {
             "success": success,
-            "order_id": inserted_id,
+            "order_id": persisted_order_id,
             "user_id": order["user_id"],
             "status": status,
             "fulfilled_items": fulfilled,

@@ -3,7 +3,8 @@ from services.session_service import (
     get_session,
     create_session,
     update_session,
-    end_session
+    end_session,
+    delete_session
 )
 from sales_graph.graph import run_sales_graph
 from db.database import sessions_collection
@@ -71,7 +72,7 @@ def sales_chat(
 
         bot_reply = result.get("response", {}).get("message", "")
 
-        add_message(session_id, "assistant", bot_reply)
+        add_message(session_id, "assistant", bot_reply, payload=result.get("response", {}))
 
         return {
             "success": True,
@@ -141,12 +142,24 @@ def get_user_sessions(user=Depends(get_current_user)):
 
     sessions = list(
         sessions_collection.find(
-            {"user_id": user_id},
-            {"chat_history": 0}
-        ).sort("updated_at", -1)
+            {"user_id": user_id, "status": {"$ne": "deleted"}}
+        ).sort("metadata.last_updated", -1)
     )
 
     for s in sessions:
         s["_id"] = str(s["_id"])
 
     return sessions
+
+
+@router.delete("/session/{session_id}")
+def delete_session_route(
+    session_id: str,
+    user=Depends(get_current_user)
+):
+    session = get_session(session_id)
+
+    if not session or session["user_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    return {"success": delete_session(session_id)}

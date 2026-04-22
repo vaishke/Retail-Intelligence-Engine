@@ -17,6 +17,7 @@ from sales_graph.nodes.intent_detector import intent_detector_node
 from sales_graph.nodes.sales_planner import sales_planner_node, post_worker_evaluation
 from sales_graph.nodes.recommend import recommendation_agent_node
 from sales_graph.nodes.inventory import inventory_agent_node
+from sales_graph.nodes.cart_manager import cart_manager_node
 from sales_graph.nodes.response_generator import response_generator_node
 
 # You'll need to create these following the same pattern as recommend.py and inventory.py
@@ -39,6 +40,7 @@ def create_sales_graph():
     graph.add_node("sales_planner", sales_planner_node)
     graph.add_node("recommendation_agent", recommendation_agent_node)
     graph.add_node("inventory_agent", inventory_agent_node)
+    graph.add_node("cart_manager", cart_manager_node)
     graph.add_node("response_generator", response_generator_node)
     
     graph.add_node("loyalty_offers_agent", loyalty_offers_agent_node)
@@ -56,6 +58,7 @@ def create_sales_graph():
     # All workers always return to sales_planner
     graph.add_edge("recommendation_agent", "sales_planner")
     graph.add_edge("inventory_agent", "sales_planner")
+    graph.add_edge("cart_manager", "sales_planner")
     graph.add_edge("loyalty_offers_agent", "sales_planner")
     graph.add_edge("payment_agent", "sales_planner")
     graph.add_edge("fulfilment_agent", "sales_planner")
@@ -86,6 +89,7 @@ def create_sales_graph():
         {
             "recommendation_agent": "recommendation_agent",
             "inventory_agent": "inventory_agent",
+            "cart_manager": "cart_manager",
             "loyalty_offers_agent": "loyalty_offers_agent",
             "payment_agent": "payment_agent",
             "fulfilment_agent": "fulfilment_agent",
@@ -107,44 +111,62 @@ def create_sales_graph():
 
 # ─── Export the compiled graph ──────────────────────────────────────
 sales_graph = create_sales_graph()
+_seen_threads: set = set()
 
 
 # ─── Helper function to invoke the graph ───────────────────────────
-def run_sales_graph(user_id: str, session_id: str, channel: str, message: str, extras: Dict[str, Any] = None) -> Dict[str, Any]:
+def run_sales_graph(
+    user_id: str,
+    session_id: str,
+    channel: str,
+    message: str,
+    extras: Dict[str, Any] = None
+) -> Dict[str, Any]:
     """
     Convenience function to run the graph with a user message.
-    
-    Args:
-        user_id: MongoDB ObjectId as string
-        session_id: MongoDB session._id as string  
-        channel: "web" | "mobile" | "kiosk" etc
-        message: User's text input
-        extras: Optional extra fields (payment_method, coupon_code, delivery_address, location etc.)
-    
-    Returns:
-        Final state with response
+    On the FIRST turn for a thread, full initial state is passed.
+    On SUBSEQUENT turns, only the new message (and extras) are passed
+    so the checkpointer can restore conversation history / cart / recommendations.
     """
-    
-    # Create initial state
-    from sales_graph.state import create_initial_state
-    initial_state = create_initial_state(user_id, session_id, channel, message)
-    
-    # Patch in any extra fields from the API request (payment_method, coupon_code, etc.)
+
+    thread_id = f"{user_id}::{session_id}"
+    config = {
+        "configurable": {
+            "thread_id": thread_id
+        }
+    }
+
+    is_first_turn = thread_id not in _seen_threads
+
+    if is_first_turn:
+        # First message in this session — build full initial state
+        from sales_graph.state import create_initial_state
+        input_state = create_initial_state(user_id, session_id, channel, message)
+        _seen_threads.add(thread_id)
+    else:
+        # Subsequent messages — only send the fields that change each turn.
+        # The checkpointer restores cart, recommendations, conversation_history, etc.
+        input_state = {
+            "latest_user_message": message,
+            "current_intent": None,       # reset so intent_detector runs fresh
+            "intent_entities": {},
+            "next_action": None,
+            "await_confirmation": False,
+            "confirmation_context": None,
+            "last_worker": None,
+            "last_error": None,
+            "silent_chains_this_turn": 0,
+            "response": None,
+            "agent_call_history": [],
+        }
+
+    # Patch in any extra fields from the API request
     if extras:
         for key, value in extras.items():
             if value is not None:
-                initial_state[key] = value
-    
-    # Define checkpoint config
-    config = {
-        "configurable": {
-            "thread_id": f"{user_id}::{session_id}"  # Composite key per design doc
-        }
-    }
-    
-    # Run the graph
-    final_state = sales_graph.invoke(initial_state, config=config)
-    
+                input_state[key] = value
+
+    final_state = sales_graph.invoke(input_state, config=config)
     return final_state
 
 

@@ -7,6 +7,8 @@ Wrapper node around agents/inventory_agent.py
 from typing import Dict, Any
 from agents.inventory_agent import InventoryAgent
 from datetime import datetime
+from services.cart_service import CartService
+from db.database import sessions_collection
 
 
 def inventory_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -32,8 +34,21 @@ def inventory_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     location = state.get("location", {})
     store_id = location.get("store_id") if location else None
     
+    intent_entities = state.get("intent_entities", {})
+    resolved_product = None
+
+    if intent_entities.get("product_query") or intent_entities.get("reference"):
+        resolved_product = CartService.resolve_product_reference(
+            product_query=intent_entities.get("product_query") or intent_entities.get("reference", ""),
+            recommended_items=recommended_items or _latest_recommendations_from_session(state.get("session_id")),
+            cart_items=cart_items,
+        )
+
     # Determine which items to check
-    items_to_check = cart_items if cart_items else recommended_items
+    if resolved_product:
+        items_to_check = [resolved_product]
+    else:
+        items_to_check = cart_items if cart_items else recommended_items
     
     if not items_to_check:
         return {
@@ -104,3 +119,20 @@ def inventory_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 "retryable": True  # API errors are retryable
             }
         }
+
+
+def _latest_recommendations_from_session(session_id: str | None) -> list[Dict[str, Any]]:
+    if not session_id:
+        return []
+
+    session = sessions_collection.find_one({"_id": session_id}, {"chat_history": 1})
+    if not session:
+        return []
+
+    for entry in reversed(session.get("chat_history", [])):
+        payload = entry.get("payload", {})
+        recommendations = payload.get("data", {}).get("recommendations")
+        if recommendations:
+            return recommendations
+
+    return []

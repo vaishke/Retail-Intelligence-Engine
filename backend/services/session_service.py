@@ -38,20 +38,32 @@ def get_session(session_id):
     """
     return sessions_collection.find_one({"_id": session_id})
 
-def add_message(session_id, role, message):
-    sessions_collection.update_one(
-        {"_id": session_id},
-        {
-            "$push": {
-                "chat_history": {
-                    "role": role,
-                    "message": message,
-                    "timestamp": datetime.utcnow()
-                }
-            },
-            "$currentDate": {"metadata.last_updated": True}
-        }
-    )
+def add_message(session_id, role, message, payload=None):
+    session = get_session(session_id)
+    if not session:
+        return
+
+    chat_entry = {
+        "role": role,
+        "message": message,
+        "timestamp": datetime.utcnow()
+    }
+    if payload is not None:
+        chat_entry["payload"] = payload
+
+    update_doc = {
+        "$push": {
+            "chat_history": chat_entry
+        },
+        "$currentDate": {"metadata.last_updated": True}
+    }
+
+    # Use the first user message as a human-friendly chat title.
+    if role == "user" and not session.get("chat_history"):
+        title = message.strip()[:60] or "New Chat"
+        update_doc["$set"] = {"title": title}
+
+    sessions_collection.update_one({"_id": session_id}, update_doc)
 
 def update_session(session_id, updates):
     result = sessions_collection.update_one(
@@ -63,12 +75,19 @@ def update_session(session_id, updates):
     )
     return get_session(session_id)
 
+def delete_session(session_id):
+    result = sessions_collection.delete_one({"_id": session_id})
+    return result.deleted_count > 0
+
 def end_session(session_id):
     """
     Mark session as completed.
     """
     result = sessions_collection.update_one(
         {"_id": session_id},
-        {"$set": {"active": False, "updated_at": datetime.utcnow()}}
+        {
+            "$set": {"status": "completed"},
+            "$currentDate": {"metadata.last_updated": True}
+        }
     )
     return result.modified_count > 0

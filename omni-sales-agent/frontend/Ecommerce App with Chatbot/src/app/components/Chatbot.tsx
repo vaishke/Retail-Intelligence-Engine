@@ -4,9 +4,9 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
 import { Card } from './ui/card';
-import { storage, ChatSession, ChatMessage } from '../utils/mockData';
+import { ChatSession, ChatMessage } from '../utils/mockData';
 import { toast } from 'sonner';
-import { getSessions, sendChatToBackend, startSession } from '../../services/api';
+import { deleteSession, getSessionById, getSessions, sendChatToBackend, startSession } from '../../services/api';
 
 interface ChatbotProps {
   isOpen: boolean;
@@ -18,34 +18,55 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
-  const userId = user?._id;
+  const mapBackendMessage = (msg: any, index: number): ChatMessage => ({
+    id: `${msg.timestamp || Date.now()}-${index}`,
+    role: msg.role === 'assistant' ? 'agent' : 'user',
+    content: msg.role === 'assistant'
+      ? {
+          message: msg.payload?.message || msg.message,
+          products: msg.payload?.data?.recommendations || [],
+          prompt: msg.payload?.prompt || '',
+        }
+      : msg.message,
+    timestamp: msg.timestamp || new Date().toISOString(),
+  });
+
+  const mapBackendSession = (session: any): ChatSession => ({
+    id: session._id,
+    title: session.title || 'New Chat',
+    messages: Array.isArray(session.chat_history)
+      ? session.chat_history.map(mapBackendMessage)
+      : [],
+    createdAt: session.metadata?.created_at || new Date().toISOString(),
+  });
 
   useEffect(() => {
-  const init = async () => {
-    const backendSessions = await getSessions();
+    if (!isOpen) return;
 
-    const formatted = backendSessions.map((s: any) => ({
-      id: s._id,
-      title: "Chat",
-      messages: s.messages || [],
-      createdAt: s.created_at,
-    }));
+    const loadSessions = async () => {
+      setIsLoadingSessions(true);
+      try {
+        const backendSessions = await getSessions();
+        const formatted = backendSessions.map(mapBackendSession);
+        setSessions(formatted);
+        setCurrentSessionId((prev) => {
+          if (prev && formatted.some((session) => session.id === prev)) {
+            return prev;
+          }
+          return formatted[0]?.id ?? null;
+        });
+      } catch {
+        toast.error('Failed to load chat history');
+      } finally {
+        setIsLoadingSessions(false);
+      }
+    };
 
-    setSessions(formatted);
-
-    if (formatted.length === 0) {
-      const newSession = await startSession();
-      setCurrentSessionId(newSession._id);
-    } else {
-      setCurrentSessionId(formatted[0].id);
-    }
-  };
-
-  init();
-}, []);
+    loadSessions();
+  }, [isOpen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -54,59 +75,79 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
   const currentSession = sessions.find(s => s.id === currentSessionId);
 
   const createNewChat = async () => {
-  const newSession = await startSession();
-
-  const formattedSession: ChatSession = {
-    id: newSession._id,   // ✅ REAL DB ID
-    title: "New Chat",
-    messages: [],
-    createdAt: new Date().toISOString(),
+    try {
+      const newSession = await startSession();
+      const formattedSession = mapBackendSession(newSession);
+      setSessions((prev) => [formattedSession, ...prev]);
+      setCurrentSessionId(newSession._id);
+      toast.success('New chat created');
+    } catch {
+      toast.error('Failed to create new chat');
+    }
   };
 
-  const newSessions = [formattedSession, ...sessions];
-  setSessions(newSessions);
-  setCurrentSessionId(newSession._id);
-
-  toast.success('New chat created');
-};
-
-  const deleteChat = (id: string, e: React.MouseEvent) => {
+  const deleteChat = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const newSessions = sessions.filter(s => s.id !== id);
-    setSessions(newSessions);
 
-    if (currentSessionId === id && newSessions.length > 0) {
-      setCurrentSessionId(newSessions[0].id);
-    } else if (newSessions.length === 0) {
-      createNewChat();
+    try {
+      await deleteSession(id);
+      setSessions((prev) => {
+        const newSessions = prev.filter((s) => s.id !== id);
+        if (currentSessionId === id) {
+          setCurrentSessionId(newSessions[0]?.id ?? null);
+        }
+        return newSessions;
+      });
+      toast.success('Chat deleted');
+    } catch {
+      toast.error('Failed to delete chat');
     }
-
-    storage.setChatSessions(newSessions);
-    toast.success('Chat deleted');
   };
 
   const sendMessage = async () => {
-    if (!message.trim() || !currentSession) return;
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage || isTyping) return;
+
+    let sessionId = currentSessionId;
+    let sessionToUse = currentSession;
+
+    if (!sessionId || !sessionToUse) {
+      try {
+        const newSession = await startSession();
+        const formattedSession = mapBackendSession(newSession);
+        setSessions((prev) => [formattedSession, ...prev]);
+        setCurrentSessionId(newSession._id);
+        sessionId = newSession._id;
+        sessionToUse = formattedSession;
+      } catch {
+        toast.error('Failed to create chat');
+        return;
+      }
+    }
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: message,
+      content: trimmedMessage,
       timestamp: new Date().toISOString(),
     };
 
     const updatedSession = {
-      ...currentSession,
-      messages: [...currentSession.messages, userMessage],
+      ...sessionToUse,
+      title: sessionToUse.messages.length === 0 ? trimmedMessage.slice(0, 60) : sessionToUse.title,
+      messages: [...sessionToUse.messages, userMessage],
     };
 
-    setSessions(sessions.map(s => s.id === currentSessionId ? updatedSession : s));
+    setSessions((prev) => {
+      const exists = prev.some((s) => s.id === sessionId);
+      if (!exists) return [updatedSession, ...prev];
+      return prev.map((s) => (s.id === sessionId ? updatedSession : s));
+    });
     setMessage('');
     setIsTyping(true);
 
     try {
-      const res = await sendChatToBackend(message, currentSessionId!);
-      console.log(res);
+      const res = await sendChatToBackend(trimmedMessage, sessionId!);
       const agentMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'agent',
@@ -125,9 +166,13 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
         messages: [...updatedSession.messages, agentMessage],
       };
 
-      const newSessions = sessions.map(s => s.id === currentSessionId ? finalSession : s);
-      setSessions(newSessions);
-      storage.setChatSessions(newSessions);
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? finalSession : s)));
+
+      // Refresh the active session from MongoDB so UI stays aligned with the DB source of truth.
+      const persistedSession = await getSessionById(sessionId!);
+      const mappedPersistedSession = mapBackendSession(persistedSession);
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? mappedPersistedSession : s)));
+      window.dispatchEvent(new Event("storage"));
     } catch {
       const errorMessage: ChatMessage = {
         id: (Date.now() + 2).toString(),
@@ -141,9 +186,7 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
         messages: [...updatedSession.messages, errorMessage],
       };
 
-      const newSessions = sessions.map(s => s.id === currentSessionId ? finalSession : s);
-      setSessions(newSessions);
-      storage.setChatSessions(newSessions);
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? finalSession : s)));
     } finally {
       setIsTyping(false);
     }
@@ -171,6 +214,9 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
 
           <ScrollArea className="flex-1 overflow-y-auto">
             <div className="space-y-2">
+              {!isLoadingSessions && sessions.length === 0 && (
+                <p className="text-sm text-muted-foreground px-1">No chats yet</p>
+              )}
               {sessions.map(session => (
                 <div
                   key={session.id}
@@ -205,6 +251,11 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
           {/* Messages */}
           <ScrollArea className="flex-1 overflow-y-auto p-4">
             <div className="space-y-4">
+              {!currentSession && !isLoadingSessions && (
+                <p className="text-sm text-muted-foreground">
+                  Start a new chat to talk with the AI shopping assistant.
+                </p>
+              )}
               {currentSession?.messages.map(msg => (
                 <div
                   key={msg.id}

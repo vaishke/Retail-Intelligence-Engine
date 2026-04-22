@@ -19,20 +19,27 @@ export function CheckoutPage() {
   const [products, setProducts] = useState<any[]>([]);
 
   const navigate = useNavigate();
-  const userId = "user123"; // replace with auth user later
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const userId = user.user_id || user.id;
 
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
+    if (!userId) {
+      setCartItems([]);
+      return;
+    }
+
     const cartData = await fetchCart(userId);
     const productsData = await fetchProducts();
 
-    setProducts(productsData);
+    setProducts(productsData.products || productsData);
 
-    const merged = cartData.map((item: any) => {
-      const product = productsData.find((p: any) => p.id === item.product_id);
+    const cartItemsData = cartData.cart || cartData;
+    const merged = cartItemsData.map((item: any) => {
+      const product = (productsData.products || productsData).find((p: any) => (p._id || p.id) === item.product_id);
       return {
         ...item,
         product,
@@ -51,6 +58,11 @@ export function CheckoutPage() {
   const total = subtotal + shipping;
 
   const handlePlaceOrder = async () => {
+    if (!userId) {
+      toast.error('Please log in to place an order');
+      return;
+    }
+
     setIsProcessing(true);
 
     try {

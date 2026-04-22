@@ -1,147 +1,171 @@
-"""
-sales_graph/nodes/intent_detector.py
-
-Intent classification node with TWO options:
-1. Rule-based (fast, free, deterministic) - DEFAULT
-2. Groq LLM-based (accurate, still free, requires API key)
-
-To use Groq: Set environment variable GROQ_API_KEY
-"""
-
 from typing import Dict, Any
 import os
+import re
 
 
-# Intent taxonomy from design doc Section 8.1
 INTENT_TAXONOMY = [
-    "discovery",                # User wants product suggestions
-    "refine_recommendations",   # Filter or modify suggestions
-    "availability_check",       # Check if items in stock
-    "reservation_request",      # Reserve items in-store
-    "offer_inquiry",            # Ask about discounts/loyalty
-    "checkout_intent",          # Initiate payment
-    "checkout_confirmation",    # Confirm after seeing summary
-    "payment_method_selection", # Select/change payment method
-    "order_tracking",           # Status of past order
-    "return_request",           # Return or exchange
-    "general_query"             # Out of scope / clarification needed
+    "discovery",
+    "refine_recommendations",
+    "add_to_cart",
+    "view_cart",
+    "remove_from_cart",
+    "availability_check",
+    "reservation_request",
+    "offer_inquiry",
+    "checkout_intent",
+    "checkout_confirmation",
+    "payment_method_selection",
+    "order_tracking",
+    "return_request",
+    "general_query"
 ]
 
 
 def intent_detector_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Classifies the user's latest message into an intent.
-    
-    Auto-detects which method to use:
-    - If GROQ_API_KEY is set: uses Groq LLM (accurate)
-    - Otherwise: uses rule-based classification (fast, free)
-    
-    Updates:
-    - state["current_intent"]
-    - state["intent_entities"]
+    Clean intent + entity extraction with HARD RESET of entities.
     """
-    
+
     message = state.get("latest_user_message", "").lower()
-    
-    # Check if Groq API key is available
+
     if os.getenv("GROQ_API_KEY"):
         try:
             intent, entities = classify_with_groq(message)
         except Exception as e:
-            print(f"Groq classification failed, falling back to rules: {e}")
+            print(f"Groq failed, fallback: {e}")
             intent = classify_intent_rules(message)
-            entities = extract_entities_rules(message, state)
+            entities = extract_entities_rules(message)
     else:
-        # Use rule-based classification
         intent = classify_intent_rules(message)
-        entities = extract_entities_rules(message, state)
-    
+        entities = extract_entities_rules(message)
+
+    # 🔥 CRITICAL FIX: remove None values (prevents stale state pollution)
+    cleaned_entities = {k: v for k, v in entities.items() if v is not None}
+
+    print("DEBUG intent_entities (cleaned):", cleaned_entities)
+
     return {
         "current_intent": intent,
-        "intent_entities": entities
+        "intent_entities": cleaned_entities  # <-- CLEAN STATE ONLY
     }
 
 
-# ═══════════════════════════════════════════════════════════════════
-# OPTION 1: RULE-BASED CLASSIFICATION (DEFAULT, FREE)
-# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════
+# RULE-BASED INTENT
+# ═══════════════════════════════════════
 
 def classify_intent_rules(message: str) -> str:
-    """
-    Rule-based intent classification using keyword matching.
-    Fast, free, deterministic.
-    """
-    
-    # Discovery keywords
-    if any(word in message for word in ["show", "recommend", "suggest", "want", "looking for", "find me", "need"]):
+    if any(w in message for w in ["show my cart", "view my cart", "what is in my cart", "what's in my cart", "open my cart"]):
+        return "view_cart"
+
+    if "cart" in message and any(w in message for w in ["remove", "delete"]):
+        return "remove_from_cart"
+
+    if "cart" in message and any(w in message for w in ["add", "put"]):
+        return "add_to_cart"
+
+    discovery_triggers = [
+        "show",
+        "show me",
+        "recommend",
+        "recommend me",
+        "suggest",
+        "can you suggest",
+        "want",
+        "i want",
+        "looking for",
+        "find me",
+        "need",
+        "give me",
+        "browse",
+        "anything in",
+    ]
+    if any(w in message for w in discovery_triggers):
         return "discovery"
-    
-    # Refinement keywords
-    if any(word in message for word in ["more", "different", "filter", "under", "cheaper", "expensive", "other"]):
+
+    if any(w in message for w in ["more", "different", "filter", "under", "cheaper", "expensive", "other"]):
         return "refine_recommendations"
-    
-    # Availability check
-    if any(word in message for word in ["stock", "available", "in store", "inventory", "have this", "availability"]):
+
+    if any(w in message for w in ["stock", "available", "inventory"]):
         return "availability_check"
-    
-    # Reservation
-    if any(word in message for word in ["reserve", "hold", "keep", "book", "try on", "save for me"]):
+
+    if any(w in message for w in ["reserve", "hold", "book"]):
         return "reservation_request"
-    
-    # Offers
-    if any(word in message for word in ["discount", "offer", "coupon", "points", "loyalty", "deal", "promo"]):
+
+    if any(w in message for w in ["discount", "offer", "coupon", "deal"]):
         return "offer_inquiry"
-    
-    # Checkout
-    if any(word in message for word in ["buy", "purchase", "checkout", "pay", "order"]):
-        # Distinguish between intent and confirmation
-        if any(word in message for word in ["yes", "confirm", "proceed", "go ahead", "sure"]):
+
+    if any(w in message for w in ["buy", "checkout", "pay", "order"]):
+        if any(w in message for w in ["yes", "confirm", "proceed"]):
             return "checkout_confirmation"
         return "checkout_intent"
-    
-    # Payment method
-    if any(word in message for word in ["upi", "card", "cash", "payment method", "credit", "debit"]):
+
+    if any(w in message for w in ["upi", "card", "cash"]):
         return "payment_method_selection"
-    
-    # Tracking
-    if any(word in message for word in ["track", "where is", "status", "delivery", "shipped", "order status"]):
+
+    if any(w in message for w in ["track", "status", "delivery"]):
         return "order_tracking"
-    
-    # Returns
-    if any(word in message for word in ["return", "exchange", "refund", "send back"]):
+
+    if any(w in message for w in ["return", "refund"]):
         return "return_request"
-    
-    # Default
+
     return "general_query"
 
 
-def extract_entities_rules(message: str, state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Extracts entities from the message using simple rules.
-    """
-    
-    entities = {
-        "product_query": None,
-        "location": None,
-        "order_id": None,
-        "sku_list": None,
-        "price_range": None,
-        "category": None,
-        "subcategory": None,
-        "tags": None,
-        "color": None
-    }
-    
-    # Extract product query
-    triggers = ["want", "show me", "looking for", "find", "recommend", "need"]
+# ═══════════════════════════════════════
+# ENTITY EXTRACTION (FIXED)
+# ═══════════════════════════════════════
+
+def extract_entities_rules(message: str) -> Dict[str, Any]:
+
+    entities = {}
+    quantity = extract_quantity(message)
+    if quantity is not None:
+        entities["quantity"] = quantity
+
+    if any(ref in message for ref in ["this", "that", "it"]):
+        entities["reference"] = "recent_item"
+
+    # Product query
+    triggers = [
+        "add to cart",
+        "add this",
+        "add",
+        "put this in my cart",
+        "put this into my cart",
+        "put it in my cart",
+        "put",
+        "add it to my cart",
+        "remove from cart",
+        "remove this",
+        "remove",
+        "show me",
+        "looking for",
+        "find me",
+        "find",
+        "recommend me",
+        "recommend",
+        "can you suggest",
+        "suggest",
+        "give me",
+        "browse",
+        "i want",
+        "want",
+        "need",
+    ]
     for trigger in triggers:
         if trigger in message:
             parts = message.split(trigger, 1)
             if len(parts) > 1:
-                entities["product_query"] = parts[1].strip()
+                raw_query = parts[1].strip()
+                normalized_query, result_limit = normalize_product_query(raw_query)
+                if normalized_query:
+                    entities["product_query"] = normalized_query
+                if result_limit:
+                    entities["result_limit"] = result_limit
                 break
-    
-    # Extract price range
+
+    # Price
     if "under" in message:
         try:
             price_str = message.split("under")[1].strip().split()[0]
@@ -149,154 +173,127 @@ def extract_entities_rules(message: str, state: Dict[str, Any]) -> Dict[str, Any
             entities["price_range"] = [0, max_price]
         except:
             pass
-    
-    # Extract color
-    colors = ["red", "blue", "green", "black", "white", "yellow", "pink", "purple", "orange", "brown", "grey", "gray"]
+
+    # Color (FIX: consistent key name)
+    colors = ["red", "blue", "green", "black", "white", "yellow", "pink"]
     for color in colors:
         if color in message:
-            entities["color"] = color
-            break
-    
-    # Extract category
-    categories = ["clothing", "electronics", "accessories", "footwear", "kurti", "saree", "shirt", "dress"]
-    for cat in categories:
-        if cat in message:
-            entities["category"] = cat
+            entities["colors"] = [color]   # <-- FIXED (list + consistent key)
             break
 
-    # Extract subcategory
+    # Category (normalize casing + synonyms)
+    category_aliases = {
+        "clothing": "Clothing",
+        "clothes": "Clothing",
+        "apparel": "Clothing",
+        "electronics": "Electronics",
+        "electronic": "Electronics",
+        "gadgets": "Electronics",
+        "accessories": "Accessories",
+        "accessory": "Accessories",
+        "footwear": "Footwear",
+        "shoes": "Footwear",
+        "shoe": "Footwear",
+        "earbuds": "Electronics",
+        "earphones": "Electronics",
+        "headphones": "Electronics",
+        "bottle": "Accessories",
+        "water bottle": "Accessories",
+    }
+    for alias, category in category_aliases.items():
+        if alias in message:
+            entities["category"] = category
+            break
+
+    # Subcategory
     subcategory_map = {
-        "anarkali": "Ethnic Wear",
+        "yoga mat": "Fitness",
+        "mat": "Fitness",
+        "water bottle": "Hydration",
+        "bottle": "Hydration",
+        "earbuds": "Audio",
+        "earphones": "Audio",
         "kurti": "Ethnic Wear",
         "kurta": "Ethnic Wear",
+        "ethnic wear": "Ethnic Wear",
+        "traditional wear": "Ethnic Wear",
+        "indian wear": "Ethnic Wear",
         "saree": "Ethnic Wear",
         "lehenga": "Ethnic Wear",
-        "salwar": "Ethnic Wear",
-        "jacket": "Jackets",
-        "cardigan": "Sweaters",
-        "sweater": "Sweaters",
-        "top": "Tops",
-        "blouse": "Tops",
-        "jeans": "Jeans",
-        "denim": "Jeans",
-        "dress": "Dresses",
-        "skirt": "Skirts",
         "shirt": "Shirts",
-        "tshirt": "T-Shirts",
-        "t-shirt": "T-Shirts",
+        "jeans": "Jeans",
+        "dress": "Dresses",
     }
+
     for keyword, subcat in subcategory_map.items():
         if keyword in message:
             entities["subcategory"] = subcat
             break
 
-    # Extract style tags
-    style_keywords = [
-        "anarkali", "printed", "embroidered", "silk", "denim", "sequin",
-        "woolen", "ethnic", "casual", "formal", "party wear", "festive",
-        "floral", "plain", "striped", "checked", "solid", "lace", "velvet"
-    ]
-    matched_tags = [tag for tag in style_keywords if tag in message]
-    entities["tags"] = matched_tags if matched_tags else None
-    
+    # Tags
+    style_keywords = ["ethnic", "casual", "formal", "party", "printed", "wireless", "smart", "fitness", "sports"]
+    tags = [tag for tag in style_keywords if tag in message]
+    if tags:
+        entities["tags"] = tags
+
     return entities
 
 
-# ═══════════════════════════════════════════════════════════════════
-# OPTION 2: GROQ LLM-BASED CLASSIFICATION (ACCURATE, FREE)
-# ═══════════════════════════════════════════════════════════════════
-
-def classify_with_groq(message: str) -> tuple[str, Dict[str, Any]]:
+def normalize_product_query(raw_query: str) -> tuple[str, int | None]:
     """
-    Uses Groq API for intent classification.
-    Groq provides free, fast LLM inference.
-    
-    Requires: pip install groq
-    Environment variable: GROQ_API_KEY
+    Extracts a clean product phrase and optional requested result count.
+    Examples:
+    - "1 yoga mat" -> ("yoga mat", 1)
+    - "some ethnic wear" -> ("ethnic wear", None)
     """
-    
-    from groq import Groq
-    import json
-    
-    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    
-    prompt = f"""Classify this user message into ONE intent from the list below.
-Also extract relevant entities.
+    query = raw_query.strip().lower()
+    query = re.sub(r"[^\w\s]", " ", query)
+    query = re.sub(r"\s+", " ", query).strip()
 
-User message: "{message}"
+    result_limit = None
+    number_words = {
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+    }
 
-Valid intents:
-{', '.join(INTENT_TAXONOMY)}
+    match = re.match(r"^(?P<count>\d+|one|two|three|four|five)\s+(?P<query>.+)$", query)
+    if match:
+        count_text = match.group("count")
+        result_limit = int(count_text) if count_text.isdigit() else number_words[count_text]
+        query = match.group("query").strip()
 
-Extract entities if present:
-- product_query: what product they want (string or null)
-- location: city/store if mentioned (string or null)
-- price_range: [min, max] if mentioned (array or null)
-- category: broad product category e.g. "Clothing", "Electronics" (string or null)
-- subcategory: specific subcategory e.g. "Ethnic Wear", "Jackets", "Tops", "Jeans" (string or null)
-- tags: style/attribute keywords e.g. ["anarkali", "printed", "silk", "casual"] (array or null)
-- color: color if mentioned (string or null)
+    query = re.sub(r"^(some|a|an|any)\s+", "", query).strip()
+    query = re.sub(r"\b(please|for me|for us)\b", "", query).strip()
+    query = re.sub(r"\b(can you|could you|would you)\b", "", query).strip()
+    query = re.sub(r"\b(me|something|anything|products|product|items|item|cart)\b", "", query).strip()
+    query = re.sub(r"\b(to my|in my|into my)\b", "", query).strip()
+    query = re.sub(r"\b(add|put|remove|delete|pls|plss|please)\b", "", query).strip()
+    query = re.sub(r"\s+", " ", query).strip()
 
-Return ONLY valid JSON in this exact format (no markdown, no extra text):
-{{
-  "intent": "<intent_name>",
-  "entities": {{
-    "product_query": "...",
-    "price_range": [min, max],
-    "category": "...",
-    "subcategory": "...",
-    "tags": [...],
-    "color": "..."
-  }}
-}}"""
-    
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",  # Fast, free Groq model
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,  # Deterministic output
-        max_tokens=200
-    )
-    
-    result_text = response.choices[0].message.content.strip()
-    
-    # Parse JSON response
-    try:
-        result = json.loads(result_text)
-        intent = result.get("intent", "general_query")
-        entities = result.get("entities", {})
-        
-        # Validate intent is in taxonomy
-        if intent not in INTENT_TAXONOMY:
-            intent = "general_query"
-        
-        return intent, entities
-    
-    except json.JSONDecodeError:
-        # Fallback to rule-based if JSON parsing fails
-        print(f"Groq returned invalid JSON: {result_text}")
-        return classify_intent_rules(message), extract_entities_rules(message, {})
+    if not query:
+        return "", result_limit
+
+    return query, result_limit
 
 
-# ═══════════════════════════════════════════════════════════════════
-# USAGE INSTRUCTIONS
-# ═══════════════════════════════════════════════════════════════════
+def extract_quantity(message: str) -> int | None:
+    number_words = {
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+    }
 
-"""
-SETUP FOR GROQ (RECOMMENDED):
+    quantity_match = re.search(r"\b(\d+)\b", message)
+    if quantity_match:
+        return max(1, int(quantity_match.group(1)))
 
-1. Install Groq SDK:
-   pip install groq
+    for word, value in number_words.items():
+        if re.search(rf"\b{word}\b", message):
+            return value
 
-2. Get free API key from: https://console.groq.com/keys
-
-3. Set environment variable:
-   export GROQ_API_KEY="your-key-here"
-   
-   Or in Python:
-   os.environ["GROQ_API_KEY"] = "your-key-here"
-
-4. That's it! The node will auto-detect and use Groq.
-
-FALLBACK:
-If GROQ_API_KEY is not set, the node uses rule-based classification (no API needed).
-"""
+    return None

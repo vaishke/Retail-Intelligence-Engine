@@ -6,7 +6,6 @@ Wrapper node around agents/recommendation_agent.py
 
 from typing import Dict, Any
 from agents.recommendation_agent import RecommendationAgent
-from datetime import datetime
 
 
 def recommendation_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -31,6 +30,7 @@ def recommendation_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # Build constraints from intent entities
     constraints = build_constraints(intent_entities)
+    top_k = intent_entities.get("result_limit") or 5
     
     # Get product IDs to exclude (already in cart)
     exclude_ids = [item.get("product_id") for item in cart_items if item.get("product_id")]
@@ -42,7 +42,7 @@ def recommendation_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         result = RecommendationAgent.recommend_products(
             user_id=user_id,
             constraints=constraints,
-            top_k=5,
+            top_k=top_k,
             exclude_product_ids=exclude_ids
         )
         
@@ -101,7 +101,10 @@ def build_constraints(entities: Dict[str, Any]) -> Dict[str, Any]:
     if entities.get("price_range"):
         constraints["price_range"] = entities["price_range"]
     
-    if entities.get("color"):
-        constraints["colors"] = [entities["color"]]
-    
+    if entities.get("colors"):
+        constraints["colors"] = entities["colors"]
+
+    if entities.get("product_query"):
+        constraints["product_query"] = entities["product_query"]
+
     return constraints

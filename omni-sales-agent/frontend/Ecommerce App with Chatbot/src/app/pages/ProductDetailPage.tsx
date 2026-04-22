@@ -17,7 +17,7 @@ export function ProductDetailPage() {
   // ✅ FETCH PRODUCT FROM BACKEND
   useEffect(() => {
     fetchProducts().then((data) => {
-      const found = data.find((p: any) => p.id === id);
+      const found = data.find((p: any) => p._id === id || p.id === id);
       setProduct(found);
     });
   }, [id]);
@@ -39,9 +39,16 @@ export function ProductDetailPage() {
     }
 
     const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const userId = user.user_id || user.id;
+
+    if (!userId) {
+      toast.error("Please log in to add items to cart");
+      return;
+    }
 
     try {
-      await addToCart(user.id, product.id, quantity);
+      await addToCart(userId, product._id || product.id, quantity);
+      window.dispatchEvent(new Event("storage"));
       toast.success(`Added ${quantity} item(s) to cart`);
     } catch (err) {
       console.error(err);
@@ -143,7 +150,7 @@ export function ProductDetailPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
+                    onClick={() => setQuantity(Math.min(product.stock ?? quantity + 1, quantity + 1))}
                   >
                     <Plus className="h-4 w-4" />
                   </Button>

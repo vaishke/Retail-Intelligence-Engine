@@ -7,7 +7,6 @@ Wrapper node around agents/fulfillment_agent.py
 from typing import Dict, Any
 from agents.fulfillment_agent import FulfillmentAgent
 from bson import ObjectId
-from db.database import orders_collection
 
 
 def fulfilment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -71,10 +70,8 @@ def fulfilment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "discounts_applied": []  # Can be populated from loyalty_data if needed
         }
         
-        # Call your existing fulfillment agent
-        # NOTE: FulfillmentAgent.process_order() deducts stock correctly BUT also
-        # inserts a NEW order document. We ignore that new order and instead update
-        # the EXISTING order created by OfferLoyaltyAgent to avoid duplicates.
+        # Call your existing fulfillment agent.
+        # The agent now updates the existing order when order_id is provided.
         result = FulfillmentAgent.process_order(order_input)
 
         # Normalize ObjectId fields to strings for state serialization
@@ -82,20 +79,6 @@ def fulfilment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             result["order_id"] = str(result["order_id"])
         if result.get("user_id") and not isinstance(result["user_id"], str):
             result["user_id"] = str(result["user_id"])
-
-        # Update the EXISTING order (from OfferLoyaltyAgent) with fulfillment status
-        existing_order_id = loyalty_data.get("order_id")
-        if existing_order_id:
-            orders_collection.update_one(
-                {"_id": ObjectId(existing_order_id)},
-                {"$set": {
-                    "fulfillment.type": order_input["fulfillment_type"],
-                    "fulfillment.status": result.get("status", "PENDING"),
-                    "status": result.get("status", "PENDING").lower()
-                }}
-            )
-            # Use the original order_id in result so downstream nodes are consistent
-            result["order_id"] = existing_order_id
 
         if result.get("success"):
             # Fulfillment successful
