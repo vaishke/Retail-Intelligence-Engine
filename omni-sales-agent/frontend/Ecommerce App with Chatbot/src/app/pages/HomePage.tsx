@@ -4,7 +4,7 @@ import { ProductCard } from '../components/ProductCard';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Product } from '../types/product';
-import { fetchOrders, fetchProducts } from '../../services/api';
+import { fetchOrders, fetchProducts, fetchTrendingProducts } from '../../services/api';
 import { Sparkles, TrendingUp, Award, MessageSquare, Search } from 'lucide-react';
 import { Chatbot } from '../components/Chatbot';
 
@@ -12,6 +12,7 @@ export function HomePage() {
   const [user, setUser] = useState<any>(null);
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [trendingProducts, setTrendingProducts] = useState<Product[]>([]);
   const [orderCount, setOrderCount] = useState(0);
   const navigate = useNavigate();
 
@@ -45,8 +46,27 @@ export function HomePage() {
 
   useEffect(() => {
     fetchProducts().then((data) => {
-      setProducts(data);
+      setProducts(data.products || data);
     });
+  }, []);
+
+  useEffect(() => {
+    const loadTrendingProducts = async () => {
+      try {
+        const trending = await fetchTrendingProducts();
+        setTrendingProducts(trending);
+      } catch {
+        setTrendingProducts([]);
+      }
+    };
+
+    loadTrendingProducts();
+
+    const handleStorageChange = () => {
+      loadTrendingProducts();
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   useEffect(() => {
@@ -73,8 +93,8 @@ export function HomePage() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  const featuredProducts = products.filter(p => p.featured);
   const recommendedProducts = products.slice(0, 4);
+  const displayedTrendingProducts = trendingProducts.length > 0 ? trendingProducts : recommendedProducts;
 
   return (
     <div className="container mx-auto px-4 py-6 md:py-8">
@@ -158,23 +178,16 @@ export function HomePage() {
       </div>
 
       <section className="mb-12">
-        <h2 className="text-3xl font-bold mb-4">Featured Products</h2>
+        <h2 className="text-3xl font-bold mb-4">Trending Products</h2>
+        <p className="mb-6 text-muted-foreground">
+          Top bought products across the website in the last 24 hours.
+        </p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-          {recommendedProducts.map(product => (
+          {displayedTrendingProducts.map(product => (
             <ProductCard key={product._id} product={product} />
           ))}
         </div>
       </section>
-
-      {/* Featured */}
-      {/* <section>
-        <h2 className="text-3xl font-bold mb-4">Featured Products</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-          {featuredProducts.map(product => (
-            <ProductCard key={product._id} product={product} />
-          ))}
-        </div>
-      </section> */}
 
     </div>
   );

@@ -6,18 +6,26 @@ import { Card, CardContent } from '../components/ui/card';
 import { fetchProducts, addToCart } from '../../services/api';
 import { ShoppingCart, Star, Minus, Plus, ArrowLeft, Package, Truck } from 'lucide-react';
 import { toast } from 'sonner';
+import { Product } from '../types/product';
+
+const formatINR = (value: number) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(value || 0);
 
 export function ProductDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [product, setProduct] = useState<any>(null); // ✅ from API
+  const [product, setProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
 
-  // ✅ FETCH PRODUCT FROM BACKEND
   useEffect(() => {
     fetchProducts().then((data) => {
-      const found = data.find((p: any) => p._id === id || p.id === id);
+      const products = data.products || data;
+      const found = products.find((p: Product) => p._id === id || (p as any).id === id);
       setProduct(found);
     });
   }, [id]);
@@ -31,9 +39,14 @@ export function ProductDetailPage() {
     );
   }
 
-  // ✅ UPDATED ADD TO CART (API)
+  const totalStock =
+    product?.stock ??
+    product?.available_stores?.reduce((sum, store) => sum + (store.stock || 0), 0) ??
+    0;
+  const productImage = product?.images?.[0] || '/fallback.png';
+
   const handleAddToCart = async () => {
-    if (product.stock === 0) {
+    if (!product || totalStock === 0) {
       toast.error('Product is out of stock');
       return;
     }
@@ -47,7 +60,7 @@ export function ProductDetailPage() {
     }
 
     try {
-      await addToCart(userId, product._id || product.id, quantity);
+      await addToCart(userId, product._id, quantity);
       window.dispatchEvent(new Event("storage"));
       toast.success(`Added ${quantity} item(s) to cart`);
     } catch (err) {
@@ -64,24 +77,46 @@ export function ProductDetailPage() {
       </Button>
 
       <div className="grid md:grid-cols-2 gap-8">
-        {/* Product Image */}
-        <div className="relative">
-          <img
-            src={product.image}
-            alt={product.name}
-            className="w-full rounded-lg shadow-lg"
-          />
-          {product.stock === 0 && (
-            <Badge className="absolute top-4 right-4" variant="destructive">
-              Out of Stock
-            </Badge>
+        <div className="space-y-4">
+          <div className="relative">
+            <img
+              src={productImage}
+              alt={product.name}
+              className="w-full rounded-2xl shadow-lg object-cover aspect-square"
+              onError={(e) => {
+                e.currentTarget.src = '/fallback.png';
+              }}
+            />
+            {totalStock === 0 && (
+              <Badge className="absolute top-4 right-4" variant="destructive">
+                Out of Stock
+              </Badge>
+            )}
+          </div>
+
+          {product.images?.length > 1 && (
+            <div className="grid grid-cols-4 gap-3">
+              {product.images.map((image, index) => (
+                <img
+                  key={`${image}-${index}`}
+                  src={image}
+                  alt={`${product.name} ${index + 1}`}
+                  className="h-20 w-full rounded-xl object-cover border border-border/70"
+                  onError={(e) => {
+                    e.currentTarget.src = '/fallback.png';
+                  }}
+                />
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Product Info */}
         <div>
           <div className="mb-4">
-            <Badge className="mb-2">{product.category}</Badge>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <Badge>{product.category}</Badge>
+              <Badge variant="secondary">{product.subcategory}</Badge>
+            </div>
             <h1 className="text-4xl font-bold mb-2">{product.name}</h1>
             <div className="flex items-center space-x-2 mb-4">
               <div className="flex items-center">
@@ -89,18 +124,18 @@ export function ProductDetailPage() {
                   <Star
                     key={i}
                     className={`h-5 w-5 ${
-                      i < Math.floor(product.rating)
+                      i < Math.floor(product.ratings || 0)
                         ? 'fill-yellow-400 text-yellow-400'
                         : 'text-gray-300'
                     }`}
                   />
                 ))}
               </div>
-              <span className="text-lg font-semibold">{product.rating}</span>
-              <span className="text-muted-foreground">(128 reviews)</span>
+              <span className="text-lg font-semibold">{product.ratings ?? 0}</span>
+              <span className="text-muted-foreground">customer rating</span>
             </div>
             <p className="text-4xl font-bold text-primary mb-6">
-              ${product.price}
+              {formatINR(product.price)}
             </p>
           </div>
 
@@ -111,14 +146,13 @@ export function ProductDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Stock Info */}
           <div className="flex items-center space-x-6 mb-6">
             <div className="flex items-center space-x-2">
               <Package className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm">
-                {product.stock > 0 ? (
+                {totalStock > 0 ? (
                   <span className="text-green-600 font-semibold">
-                    {product.stock} in stock
+                    {totalStock} in stock
                   </span>
                 ) : (
                   <span className="text-red-600 font-semibold">Out of stock</span>
@@ -128,13 +162,74 @@ export function ProductDetailPage() {
             <div className="flex items-center space-x-2">
               <Truck className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
-                Free shipping on orders over $75
+                Store pickup and shipping availability shown below
               </span>
             </div>
           </div>
 
-          {/* Quantity Selector */}
-          {product.stock > 0 && (
+          <div className="grid sm:grid-cols-2 gap-4 mb-6">
+            {product.attributes?.color && (
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Color</p>
+                  <p className="font-semibold">{product.attributes.color}</p>
+                </CardContent>
+              </Card>
+            )}
+            {product.attributes?.material && (
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Material</p>
+                  <p className="font-semibold">{product.attributes.material}</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {!!product.attributes?.size_available?.length && (
+            <Card className="mb-6">
+              <CardContent className="p-4">
+                <h3 className="font-semibold mb-3">Available Sizes</h3>
+                <div className="flex flex-wrap gap-2">
+                  {product.attributes.size_available.map((size) => (
+                    <Badge key={size} variant="outline">{size}</Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!!product.tags?.length && (
+            <Card className="mb-6">
+              <CardContent className="p-4">
+                <h3 className="font-semibold mb-3">Highlights</h3>
+                <div className="flex flex-wrap gap-2">
+                  {product.tags.map((tag) => (
+                    <Badge key={tag} variant="secondary">{tag}</Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!!product.available_stores?.length && (
+            <Card className="mb-6">
+              <CardContent className="p-4 space-y-3">
+                <h3 className="font-semibold">Available Stores</h3>
+                {product.available_stores.map((store) => (
+                  <div
+                    key={store.store_id}
+                    className="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2"
+                  >
+                    <span className="font-medium">{store.store_id}</span>
+                    <span className="text-sm text-muted-foreground">{store.stock} in stock</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {totalStock > 0 && (
             <>
               <div className="flex items-center space-x-4 mb-6">
                 <span className="font-semibold">Quantity:</span>
@@ -150,14 +245,13 @@ export function ProductDetailPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setQuantity(Math.min(product.stock ?? quantity + 1, quantity + 1))}
+                    onClick={() => setQuantity(Math.min(totalStock, quantity + 1))}
                   >
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
 
-              {/* Buttons */}
               <div className="flex space-x-4">
                 <Button className="flex-1" size="lg" onClick={handleAddToCart}>
                   <ShoppingCart className="h-5 w-5 mr-2" />

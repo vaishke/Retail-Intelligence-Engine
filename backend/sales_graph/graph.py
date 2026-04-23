@@ -9,18 +9,15 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import InMemorySaver
 from typing import Dict, Any
 
-# Import state schema
 from sales_graph.state import SessionState
+from services.cart_service import CartService
 
-# Import all node functions
 from sales_graph.nodes.intent_detector import intent_detector_node
 from sales_graph.nodes.sales_planner import sales_planner_node, post_worker_evaluation
 from sales_graph.nodes.recommend import recommendation_agent_node
 from sales_graph.nodes.inventory import inventory_agent_node
 from sales_graph.nodes.cart_manager import cart_manager_node
 from sales_graph.nodes.response_generator import response_generator_node
-
-# You'll need to create these following the same pattern as recommend.py and inventory.py
 from sales_graph.nodes.loyalty_offers import loyalty_offers_agent_node
 from sales_graph.nodes.payment import payment_agent_node
 from sales_graph.nodes.fulfilment import fulfilment_agent_node
@@ -114,6 +111,13 @@ sales_graph = create_sales_graph()
 _seen_threads: set = set()
 
 
+def _load_shared_cart(user_id: str) -> list[Dict[str, Any]]:
+    cart_result = CartService.get_cart(user_id)
+    if not cart_result.get("success"):
+        return []
+    return cart_result.get("cart", [])
+
+
 # ─── Helper function to invoke the graph ───────────────────────────
 def run_sales_graph(
     user_id: str,
@@ -142,14 +146,18 @@ def run_sales_graph(
         # First message in this session — build full initial state
         from sales_graph.state import create_initial_state
         input_state = create_initial_state(user_id, session_id, channel, message)
+        input_state["cart_items"] = _load_shared_cart(user_id)
         _seen_threads.add(thread_id)
     else:
         # Subsequent messages — only send the fields that change each turn.
         # The checkpointer restores cart, recommendations, conversation_history, etc.
         input_state = {
             "latest_user_message": message,
+            "cart_items": _load_shared_cart(user_id),
             "current_intent": None,       # reset so intent_detector runs fresh
             "intent_entities": {},
+            "conversation_act": None,
+            "intent_confidence": None,
             "next_action": None,
             "await_confirmation": False,
             "confirmation_context": None,
@@ -168,16 +176,3 @@ def run_sales_graph(
 
     final_state = sales_graph.invoke(input_state, config=config)
     return final_state
-
-
-# ─── Example Usage ──────────────────────────────────────────────────
-if __name__ == "__main__":
-    # Test the graph
-    result = run_sales_graph(
-        user_id="507f1f77bcf86cd799439011",  # Example ObjectId
-        session_id="507f1f77bcf86cd799439012",
-        channel="web",
-        message="Show me blue kurtis"
-    )
-    
-    print("Response:", result.get("response"))

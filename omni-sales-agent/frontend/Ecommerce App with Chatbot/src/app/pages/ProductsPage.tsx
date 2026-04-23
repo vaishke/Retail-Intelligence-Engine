@@ -15,7 +15,7 @@ export function ProductsPage() {
   useEffect(() => {
     fetchProducts().then((data) => {
       console.log(data);
-      setProducts(data);
+      setProducts(data.products || data);
     });
   }, []);
 
@@ -93,7 +93,7 @@ export function ProductsPage() {
       {filteredProducts.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
           {filteredProducts.map(product => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard key={product._id || product.id} product={product} />
           ))}
         </div>
       ) : (

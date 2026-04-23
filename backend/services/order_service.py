@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from bson import ObjectId
@@ -8,10 +8,51 @@ from agents.fulfillment_agent import FulfillmentAgent
 from agents.offer_loyalty_agent import OfferLoyaltyAgent
 from agents.payment_agent import PaymentAgent
 from agents.post_purchase_agent import PostPurchaseAgent
-from db.database import invoices_collection, orders_collection, shipments_collection
+from db.database import invoices_collection, orders_collection, products_collection, shipments_collection
 
 
 class OrderService:
+    @staticmethod
+    def get_trending_products(hours: int = 24, limit: int = 4) -> Dict[str, Any]:
+        window_start = datetime.utcnow() - timedelta(hours=hours)
+
+        pipeline = [
+            {"$match": {"created_at": {"$gte": window_start}}},
+            {"$unwind": "$items"},
+            {
+                "$group": {
+                    "_id": "$items.product_id",
+                    "total_qty": {"$sum": "$items.qty"},
+                    "order_count": {"$sum": 1},
+                    "last_ordered_at": {"$max": "$created_at"},
+                }
+            },
+            {"$sort": {"total_qty": -1, "order_count": -1, "last_ordered_at": -1}},
+            {"$limit": limit},
+        ]
+
+        aggregates = list(orders_collection.aggregate(pipeline))
+        if not aggregates:
+            return {"success": True, "products": []}
+
+        product_ids = [entry["_id"] for entry in aggregates if entry.get("_id")]
+        product_docs = list(products_collection.find({"_id": {"$in": product_ids}}))
+        product_map = {product["_id"]: product for product in product_docs}
+
+        trending_products = []
+        for entry in aggregates:
+            product = product_map.get(entry["_id"])
+            if not product:
+                continue
+
+            serialized_product = OrderService._make_json_safe(product)
+            serialized_product["trending_qty"] = entry.get("total_qty", 0)
+            serialized_product["trending_order_count"] = entry.get("order_count", 0)
+            serialized_product["last_ordered_at"] = OrderService._make_json_safe(entry.get("last_ordered_at"))
+            trending_products.append(serialized_product)
+
+        return {"success": True, "products": trending_products}
+
     @staticmethod
     def list_orders_for_user(user_id: str) -> Dict[str, Any]:
         user_oid = OrderService._to_object_id(user_id)

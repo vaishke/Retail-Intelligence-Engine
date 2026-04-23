@@ -106,6 +106,19 @@ export async function fetchOrders() {
   return data.orders || [];
 }
 
+export async function fetchTrendingProducts() {
+  const res = await fetch(`${BASE_URL}/orders/trending`, {
+    headers: getAuthHeaders(),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.detail || data?.message || "Failed to fetch trending products");
+  }
+
+  return data.products || [];
+}
+
 // export async function sendChatToBackend(message: string, userId: string) {
 //   const res = await fetch("http://localhost:8000/sales/chat", {
 //     method: "POST",

@@ -48,8 +48,12 @@ class PaymentAgent:
         current_status = str(order.get("payment", {}).get("status", "")).lower()
         if current_status in {"paid", "success", "captured"}:
             return {
-                "success": False,
+                "success": True,
                 "order_id": str(order["_id"]),
+                "transaction_id": order.get("payment", {}).get("transaction_id"),
+                "amount": order.get("final_price", 0),
+                "payment_method": order.get("payment", {}).get("method") or normalized_method,
+                "gateway": order.get("payment", {}).get("gateway", "mock"),
                 "message": "Order already paid"
             }
 

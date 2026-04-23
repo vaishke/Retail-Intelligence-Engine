@@ -5,58 +5,49 @@ import { Card, CardContent, CardFooter } from './ui/card';
 import { Badge } from './ui/badge';
 import { Product } from '../types/product';
 import { toast } from 'sonner';
+import { addToCart as addToCartApi } from '../../services/api';
 
 interface ProductCardProps {
   product: Product;
 }
 
-// ✅ cart type (clean, no any nonsense)
-type CartItem = {
-  productId: string;
-  quantity: number;
-};
-
-// ✅ localStorage helpers (no mockData garbage)
-const getCart = (): CartItem[] => {
-  return JSON.parse(localStorage.getItem('cart') || '[]');
-};
-
-const setCart = (cart: CartItem[]) => {
-  localStorage.setItem('cart', JSON.stringify(cart));
-};
-
 export function ProductCard({ product }: ProductCardProps) {
-  const stock = product.stock ?? 10; // fallback
+  const stock =
+    product.stock ??
+    product.available_stores?.reduce((sum, store) => sum + (store.stock || 0), 0) ??
+    0;
 
-  const addToCart = (e: React.MouseEvent) => {
+  const addToCart = async (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
 
     if (stock === 0) {
       toast.error('Product is out of stock');
       return;
     }
 
-    const cart = getCart();
-    const existingItem = cart.find(item => item.productId === product._id);
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const userId = user.user_id || user.id;
 
-    if (existingItem) {
-      if (existingItem.quantity < stock) {
-        existingItem.quantity += 1;
-        setCart(cart);
-        toast.success('Added to cart');
-      } else {
-        toast.error('Cannot add more than available stock');
-      }
-    } else {
-      setCart([...cart, { productId: product._id, quantity: 1 }]);
+    if (!userId) {
+      toast.error('Please log in to add items to cart');
+      return;
+    }
+
+    try {
+      await addToCartApi(userId, product._id, 1);
+      window.dispatchEvent(new Event("storage"));
       toast.success('Added to cart');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to add to cart');
     }
   };
 
   const image = product.images?.[0] || '/fallback.png';
 
   return (
-    <Link to={`/product/${product._id}`}>
+    <Link to={`/product/${product._id}`} target="_blank" rel="noreferrer">
       <Card className="h-full hover:shadow-lg transition-all duration-300 group overflow-hidden">
         
         {/* IMAGE */}

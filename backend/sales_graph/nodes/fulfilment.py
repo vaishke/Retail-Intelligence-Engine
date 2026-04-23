@@ -9,6 +9,16 @@ from agents.fulfillment_agent import FulfillmentAgent
 from bson import ObjectId
 
 
+def _serialize_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            **item,
+            "product_id": str(item.get("product_id")) if item.get("product_id") is not None else None,
+        }
+        for item in (items or [])
+    ]
+
+
 def fulfilment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Calls FulfillmentAgent to process order fulfillment.
@@ -31,8 +41,8 @@ def fulfilment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     user_id = state.get("user_id")
     session_id = state.get("session_id")
     cart_items = state.get("cart_items", [])
-    loyalty_data = state.get("loyalty_data", {})
-    location = state.get("location", {})
+    loyalty_data = state.get("loyalty_data") or state.get("checkout_context") or {}
+    location = state.get("location") or {}
     
     if not cart_items:
         return {
@@ -80,6 +90,8 @@ def fulfilment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             result["order_id"] = str(result["order_id"])
         if result.get("user_id") and not isinstance(result["user_id"], str):
             result["user_id"] = str(result["user_id"])
+        result["fulfilled_items"] = _serialize_items(result.get("fulfilled_items", []))
+        result["unfulfilled_items"] = _serialize_items(result.get("unfulfilled_items", []))
 
         if result.get("success"):
             # Fulfillment successful

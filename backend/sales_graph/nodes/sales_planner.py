@@ -59,6 +59,8 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
     Implements the routing policy from design doc Section 8.2.
     Pure rules-based for MVP. Can be upgraded to LLM later.
     """
+    checkout_context = state.get("loyalty_data") or state.get("checkout_context") or {}
+    checkout_stage = state.get("checkout_stage")
     
     # ── Discovery ───────────────────────────────────────────────────
     if intent == "discovery" or intent == "refine_recommendations":
@@ -159,7 +161,7 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
             }
         
         # Check if loyalty data is stale or missing
-        if not state.get("loyalty_data") or is_stale(state, "loyalty"):
+        if not checkout_context or is_stale(state, "loyalty"):
             return {
                 "next_action": "loyalty_offers_agent",
                 "await_confirmation": False,
@@ -171,7 +173,8 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "next_action": "respond",
             "await_confirmation": True,
-            "confirmation_context": "order_summary"
+            "confirmation_context": "order_summary",
+            "checkout_stage": "summary_ready"
         }
     
     # ── Checkout Confirmation ───────────────────────────────────────
@@ -185,12 +188,14 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
                     "next_action": "fulfilment_agent",
                     "await_confirmation": False,
                     "confirmation_context": None,
+                    "checkout_stage": "payment_in_progress",
                     "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
                 }
             return {
                 "next_action": "respond",
                 "await_confirmation": False,
-                "confirmation_context": "payment_retry"
+                "confirmation_context": "payment_retry",
+                "checkout_stage": "awaiting_payment_method"
             }
 
         if state.get("last_worker") == "fulfilment_agent":
@@ -198,6 +203,7 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
                 "next_action": "post_purchase_agent",
                 "await_confirmation": False,
                 "confirmation_context": None,
+                "checkout_stage": "payment_in_progress",
                 "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
             }
 
@@ -205,32 +211,45 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 "next_action": "respond",
                 "await_confirmation": False,
-                "confirmation_context": None
+                "confirmation_context": None,
+                "checkout_stage": "completed"
             }
 
         if not chosen_payment_method:
             return {
                 "next_action": "respond",
                 "await_confirmation": True,
-                "confirmation_context": "choose_payment_method"
+                "confirmation_context": "choose_payment_method",
+                "checkout_stage": "awaiting_payment_method"
             }
 
         return {
             "next_action": "payment_agent",
             "await_confirmation": False,
             "confirmation_context": None,
+            "payment_method": chosen_payment_method,
+            "checkout_stage": "payment_in_progress",
             "silent_chains_this_turn": state.get("silent_chains_this_turn", 0)
         }
 
     if intent == "payment_method_selection":
-        if not state.get("loyalty_data"):
+        chosen_payment_method = state.get("intent_entities", {}).get("payment_method") or state.get("payment_method")
+        in_checkout_flow = checkout_stage in {"summary_ready", "awaiting_payment_method", "payment_in_progress"} or bool(checkout_context)
+        if not in_checkout_flow:
+            if state.get("cart_items") and chosen_payment_method:
+                return {
+                    "next_action": "loyalty_offers_agent",
+                    "await_confirmation": False,
+                    "confirmation_context": None,
+                    "payment_method": chosen_payment_method,
+                    "checkout_stage": "summary_ready",
+                    "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
+                }
             return {
                 "next_action": "respond",
                 "await_confirmation": False,
-                "confirmation_context": "general_query"
+                "confirmation_context": "checkout_context_lost"
             }
-
-        chosen_payment_method = state.get("intent_entities", {}).get("payment_method") or state.get("payment_method")
 
         if state.get("last_worker") == "payment_agent":
             payment = state.get("payment_status") or {}
@@ -239,12 +258,14 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
                     "next_action": "fulfilment_agent",
                     "await_confirmation": False,
                     "confirmation_context": None,
+                    "checkout_stage": "payment_in_progress",
                     "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
                 }
             return {
                 "next_action": "respond",
                 "await_confirmation": False,
-                "confirmation_context": "payment_retry"
+                "confirmation_context": "payment_retry",
+                "checkout_stage": "awaiting_payment_method"
             }
 
         if state.get("last_worker") == "fulfilment_agent":
@@ -252,6 +273,7 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
                 "next_action": "post_purchase_agent",
                 "await_confirmation": False,
                 "confirmation_context": None,
+                "checkout_stage": "payment_in_progress",
                 "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
             }
 
@@ -259,25 +281,51 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 "next_action": "respond",
                 "await_confirmation": False,
-                "confirmation_context": None
+                "confirmation_context": None,
+                "checkout_stage": "completed"
             }
 
         if not chosen_payment_method:
             return {
                 "next_action": "respond",
                 "await_confirmation": True,
-                "confirmation_context": "choose_payment_method"
+                "confirmation_context": "choose_payment_method",
+                "checkout_stage": "awaiting_payment_method"
+            }
+
+        if not checkout_context:
+            if state.get("cart_items"):
+                return {
+                    "next_action": "loyalty_offers_agent",
+                    "await_confirmation": False,
+                    "confirmation_context": None,
+                    "payment_method": chosen_payment_method,
+                    "checkout_stage": "summary_ready",
+                    "silent_chains_this_turn": state.get("silent_chains_this_turn", 0) + 1
+                }
+            return {
+                "next_action": "respond",
+                "await_confirmation": False,
+                "confirmation_context": "checkout_context_lost"
             }
 
         return {
             "next_action": "payment_agent",
             "await_confirmation": False,
             "confirmation_context": None,
+            "payment_method": chosen_payment_method,
+            "checkout_stage": "payment_in_progress",
             "silent_chains_this_turn": state.get("silent_chains_this_turn", 0)
         }
     
     # ── Post-Purchase ───────────────────────────────────────────────
     if intent == "order_tracking" or intent == "return_request":
+        if state.get("last_worker") == "post_purchase_agent":
+            return {
+                "next_action": "respond",
+                "await_confirmation": False,
+                "confirmation_context": None
+            }
         return {
             "next_action": "post_purchase_agent",
             "await_confirmation": False,
@@ -341,7 +389,7 @@ def is_stale(state: Dict[str, Any], data_type: str) -> bool:
     if data_type == "inventory":
         checked_at = state.get("inventory_checked_at")
     elif data_type == "loyalty":
-        loyalty_data = state.get("loyalty_data", {})
+        loyalty_data = state.get("loyalty_data") or state.get("checkout_context") or {}
         # Note: OfferLoyaltyAgent doesn't return calculated_at in current implementation
         # For now, assume loyalty data is never stale (you can add this field later)
         return False
@@ -381,7 +429,7 @@ def post_worker_evaluation(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # Rule: inventory_agent → loyalty_offers_agent (if checkout flow)
     if last_worker == "inventory_agent" and intent == "checkout_intent":
-        if state.get("inventory_verified") and not state.get("loyalty_data"):
+        if state.get("inventory_verified") and not loyalty_data:
             return {
                 "next_action": "loyalty_offers_agent",
                 "await_confirmation": False,

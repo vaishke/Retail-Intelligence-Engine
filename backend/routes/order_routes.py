@@ -33,3 +33,11 @@ def get_my_orders(user=Depends(get_current_user)):
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("message", "Failed to fetch orders"))
     return result
+
+
+@router.get("/trending")
+def get_trending_products(user=Depends(get_current_user)):
+    result = OrderService.get_trending_products(hours=24, limit=4)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Failed to fetch trending products"))
+    return result

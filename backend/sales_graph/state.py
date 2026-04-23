@@ -45,6 +45,7 @@ class SessionState(TypedDict, total=False):
     # ── Offers and Pricing ──────────────────────────────────────────
     loyalty_data: Optional[Dict[str, Any]]  # Output of OfferLoyaltyAgent.process_checkout
     # Structure: {cart_total, coupon_discount, loyalty_points_used, loyalty_points_earned, final_amount, new_tier, order_id}
+    checkout_context: Optional[Dict[str, Any]]  # Durable checkout snapshot for multi-turn payment flow
     
     # ── Fulfillment ─────────────────────────────────────────────────
     reservation_status: Optional[Dict[str, Any]]  # Pre-payment reservation info
@@ -58,10 +59,13 @@ class SessionState(TypedDict, total=False):
     payment_idempotency_key: Optional[str]  # Generated once per cart state (see design doc §12)
     payment_method: Optional[str]           # Selected payment method for the current checkout
     payment_details: Optional[Dict[str, Any]]
+    checkout_stage: Optional[str]           # None | summary_ready | awaiting_payment_method | payment_in_progress | completed
     
     # ── Orchestration Control ───────────────────────────────────────
     current_intent: str                 # Latest classified intent (from intent_detector)
     intent_entities: Dict[str, Any]     # Extracted entities: {product_query, location, order_id, sku_list}
+    conversation_act: Optional[str]     # new_request | follow_up_request | confirmation | selection | correction | chitchat
+    intent_confidence: Optional[float]  # Confidence score from hybrid intent parser
     
     next_action: str                    # Which worker to call next, or "respond"
     await_confirmation: bool            # If True, halt and surface response to user
@@ -104,14 +108,18 @@ def create_initial_state(user_id: str, session_id: str, channel: str, message: s
         inventory_verified=False,
         inventory_checked_at=None,
         loyalty_data=None,
+        checkout_context=None,
         reservation_status=None,
         order_status=None,
         payment_status=None,
         payment_idempotency_key=None,
         payment_method=None,
         payment_details=None,
+        checkout_stage=None,
         current_intent="",
         intent_entities={},
+        conversation_act=None,
+        intent_confidence=None,
         next_action="",
         await_confirmation=False,
         confirmation_context=None,

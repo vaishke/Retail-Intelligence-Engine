@@ -78,6 +78,10 @@ export function OrdersPage() {
   const getProduct = (productId: string) =>
     products.find((p: any) => (p._id || p.id) === productId);
 
+  const openOrderInNewTab = (orderId: string) => {
+    window.open(`/order/${orderId}`, '_blank', 'noopener,noreferrer');
+  };
+
   if (isLoading) {
     return <div className="container mx-auto px-4 py-12 text-center">Loading orders...</div>;
   }
@@ -172,7 +176,12 @@ export function OrdersPage() {
                       </div>
                     )}
                     {order.tracking_number && (
-                      <Button variant="outline" size="sm" className="w-full mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2"
+                        onClick={() => openOrderInNewTab(order.id)}
+                      >
                         <ExternalLink className="h-4 w-4 mr-2" />
                         Tracking Available
                       </Button>

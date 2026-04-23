@@ -13,13 +13,25 @@ interface ChatbotProps {
   onClose: () => void;
 }
 
+const formatINR = (value: number) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+
 export function Chatbot({ isOpen, onClose }: ChatbotProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [sidebarWidth] = useState(340);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const openProductInNewTab = (productId: string) => {
+    const url = `${window.location.origin}/product/${productId}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   const mapBackendMessage = (msg: any, index: number): ChatMessage => ({
     id: `${msg.timestamp || Date.now()}-${index}`,
@@ -206,7 +218,10 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
         onClick={(e) => e.stopPropagation()} // ✅ prevent inside click
       >
         {/* Sidebar */}
-        <div className="hidden md:flex md:w-64 border-r bg-muted/20 p-4 flex-col">
+        <div
+          className="hidden md:flex border-r bg-muted/20 p-4 flex-col relative shrink-0"
+          style={{ width: `${sidebarWidth}px` }}
+        >
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Chat History</h3>
             <Button size="icon" variant="ghost" onClick={createNewChat}>
@@ -223,14 +238,25 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
                 <div
                   key={session.id}
                   onClick={() => setCurrentSessionId(session.id)}
-                  className={`p-3 rounded-lg cursor-pointer flex justify-between ${
-                    currentSessionId === session.id ? 'bg-muted' : ''
-                  }`}
+                  className={`group relative p-3 pr-12 rounded-lg cursor-pointer ${currentSessionId === session.id ? 'bg-muted' : 'hover:bg-muted/60'}`}
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate">{session.title}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm truncate whitespace-nowrap overflow-hidden text-ellipsis">
+                      {session.title}
+                    </p>
                   </div>
-                  <Button size="icon" variant="ghost" onClick={(e) => deleteChat(session.id, e)}>
+
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 transition-opacity ${
+                      currentSessionId === session.id
+                        ? 'opacity-100'
+                        : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+                    }`}
+                    onClick={(e) => deleteChat(session.id, e)}
+                    aria-label={`Delete ${session.title}`}
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -283,9 +309,10 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
                               <Card
                                 key={p.product_id}
                                 className="p-2 flex flex-col items-center hover:shadow-md transition cursor-pointer"
+                                onClick={() => openProductInNewTab(p.product_id)}
                               >
                                 <img
-                                  src={p.image}
+                                  src={p.image || p.images?.[0] || '/fallback.png'}
                                   className="w-20 h-20 object-cover rounded-md"
                                 />
                                 <p className="text-xs font-semibold text-center">
@@ -348,6 +375,68 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
                                     <span>{(msg.content as any).data.new_tier}</span>
                                   </div>
                                 )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {(msg.content as any).data?.recent_orders?.length > 0 && (
+                          <div className="rounded-lg border border-border/60 bg-background/70 p-3 space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Recent Orders
+                            </p>
+                            {(msg.content as any).data.recent_orders.map((order: any, index: number) => (
+                              <div
+                                key={`${order.order_id || 'order'}-${index}`}
+                                className="rounded-md border border-border/50 bg-background p-3 space-y-1"
+                              >
+                                <div className="flex items-center justify-between gap-3 text-xs">
+                                  <span className="font-semibold">Order #{order.order_id}</span>
+                                  <span className="capitalize text-muted-foreground">
+                                    {order.tracking_status || order.status || 'processing'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                                  <span>{order.created_at ? new Date(order.created_at).toLocaleDateString() : 'Recent order'}</span>
+                                  <span>{formatINR(order.final_amount || 0)}</span>
+                                </div>
+                                {order.tracking_number && (
+                                  <div className="text-xs text-muted-foreground">
+                                    Tracking: <span className="font-mono">{order.tracking_number}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {((msg.content as any).data?.order_id || (msg.content as any).data?.tracking_number) && (
+                          <div className="rounded-lg border border-border/60 bg-background/70 p-3 space-y-1">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Tracking
+                            </p>
+                            {(msg.content as any).data?.order_id && (
+                              <div className="flex items-center justify-between gap-3 text-xs">
+                                <span>Order ID</span>
+                                <span className="font-mono">{(msg.content as any).data.order_id}</span>
+                              </div>
+                            )}
+                            {(msg.content as any).data?.order_status && (
+                              <div className="flex items-center justify-between gap-3 text-xs">
+                                <span>Order status</span>
+                                <span className="capitalize text-muted-foreground">{(msg.content as any).data.order_status}</span>
+                              </div>
+                            )}
+                            {(msg.content as any).data?.tracking_status && (
+                              <div className="flex items-center justify-between gap-3 text-xs">
+                                <span>Delivery status</span>
+                                <span className="capitalize text-muted-foreground">{(msg.content as any).data.tracking_status}</span>
+                              </div>
+                            )}
+                            {(msg.content as any).data?.tracking_number && (
+                              <div className="flex items-center justify-between gap-3 text-xs">
+                                <span>Tracking number</span>
+                                <span className="font-mono">{(msg.content as any).data.tracking_number}</span>
                               </div>
                             )}
                           </div>

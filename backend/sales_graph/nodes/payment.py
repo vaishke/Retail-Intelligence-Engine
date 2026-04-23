@@ -32,8 +32,8 @@ def payment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     - last_error (if failure)
     """
     
-    loyalty_data = state.get("loyalty_data", {})
-    order_id = loyalty_data.get("order_id")
+    checkout_context = state.get("loyalty_data") or state.get("checkout_context") or {}
+    order_id = checkout_context.get("order_id")
     
     if not order_id:
         return {
@@ -77,6 +77,7 @@ def payment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 "payment_idempotency_key": idempotency_key,
                 "payment_method": payment_method,
                 "payment_details": payment_details,
+                "checkout_stage": "payment_in_progress",
                 "last_worker": "payment_agent",
                 "agent_call_history": state.get("agent_call_history", []) + ["payment_agent"],
                 "last_error": None
@@ -88,6 +89,7 @@ def payment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 "payment_idempotency_key": idempotency_key,
                 "payment_method": payment_method,
                 "payment_details": payment_details,
+                "checkout_stage": "awaiting_payment_method",
                 "last_worker": "payment_agent",
                 "agent_call_history": state.get("agent_call_history", []) + ["payment_agent"],
                 "last_error": {
@@ -105,6 +107,7 @@ def payment_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "payment_idempotency_key": idempotency_key,
             "payment_method": payment_method,
             "payment_details": payment_details,
+            "checkout_stage": "awaiting_payment_method",
             "last_worker": "payment_agent",
             "agent_call_history": state.get("agent_call_history", []) + ["payment_agent"],
             "last_error": {

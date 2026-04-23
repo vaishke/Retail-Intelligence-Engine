@@ -68,6 +68,7 @@ def loyalty_offers_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # Success path
             return {
                 "loyalty_data": result,
+                "checkout_context": result,
                 "last_worker": "loyalty_offers_agent",
                 "agent_call_history": state.get("agent_call_history", []) + ["loyalty_offers_agent"],
                 "last_error": None
