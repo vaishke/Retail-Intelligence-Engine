@@ -3,6 +3,12 @@ import os
 import re
 
 from sales_graph.conversation_ai import get_recent_chat_turns, infer_intent_with_groq
+from services.recommendation_state_service import (
+    extract_state_updates as extract_recommendation_state_updates,
+    get_missing_recommendation_fields,
+    has_recommendation_context,
+)
+from services.session_service import get_recommendation_state
 
 
 INTENT_TAXONOMY = [
@@ -31,29 +37,30 @@ def intent_detector_node(state: Dict[str, Any]) -> Dict[str, Any]:
     raw_message = state.get("latest_user_message", "")
     message = raw_message.lower()
     recent_turns = get_recent_chat_turns(state.get("session_id"))
+    fallback_entities = extract_entities_rules(message)
 
     if os.getenv("GROQ_API_KEY"):
         try:
             llm_result = classify_with_groq(raw_message, state, recent_turns)
             if llm_result:
                 intent = str(llm_result.get("intent") or "general_query")
-                entities = llm_result.get("entities") or {}
+                entities = _merge_detected_entities(llm_result.get("entities") or {}, fallback_entities)
                 conversation_act = llm_result.get("conversation_act") or infer_conversation_act(message, state)
                 intent_confidence = _normalize_confidence(llm_result.get("confidence"))
             else:
                 intent = classify_intent_rules(message)
-                entities = extract_entities_rules(message)
+                entities = fallback_entities
                 conversation_act = infer_conversation_act(message, state)
                 intent_confidence = 0.45
         except Exception as e:
             print(f"Groq failed, fallback: {e}")
             intent = classify_intent_rules(message)
-            entities = extract_entities_rules(message)
+            entities = fallback_entities
             conversation_act = infer_conversation_act(message, state)
             intent_confidence = 0.35
     else:
         intent = classify_intent_rules(message)
-        entities = extract_entities_rules(message)
+        entities = fallback_entities
         conversation_act = infer_conversation_act(message, state)
         intent_confidence = 0.35
 
@@ -185,9 +192,45 @@ def resolve_dialogue_context(
     checkout_active = checkout_stage in {"summary_ready", "awaiting_payment_method", "payment_in_progress"}
     compact_message = message.strip()
     short_follow_up = len(compact_message.split()) <= 4
+    recommendation_state = get_recommendation_state(state.get("session_id"))
+    recommendation_updates = extract_recommendation_state_updates(compact_message)
+    recommendation_missing_fields = get_missing_recommendation_fields(recommendation_state)
+    recommendation_pending = has_recommendation_context(recommendation_state) and bool(recommendation_missing_fields)
 
     if entities.get("list_orders"):
         return "order_tracking", entities, "follow_up_request"
+
+    if checkout_active and entities.get("payment_method"):
+        return "payment_method_selection", entities, "selection"
+
+    if recommendation_pending and (recommendation_updates or short_follow_up):
+        enriched_entities = dict(entities)
+        for key in ("category", "subcategory", "product_query"):
+            if not enriched_entities.get(key) and recommendation_state.get(key):
+                enriched_entities[key] = recommendation_state.get(key)
+
+        stored_tags = recommendation_state.get("tags") or []
+        if stored_tags:
+            merged_tags = []
+            for tag in list(enriched_entities.get("tags") or []) + list(stored_tags):
+                if isinstance(tag, str) and tag not in merged_tags:
+                    merged_tags.append(tag)
+            if merged_tags:
+                enriched_entities["tags"] = merged_tags
+
+        if "price_range" not in enriched_entities:
+            price_min = recommendation_state.get("price_min")
+            price_max = recommendation_state.get("price_max")
+            if price_min is not None or price_max is not None:
+                enriched_entities["price_range"] = [
+                    0 if price_min is None else price_min,
+                    10 ** 9 if price_max is None else price_max,
+                ]
+
+        if not recommendation_updates and compact_message in {"yes", "yes please", "go ahead", "continue"}:
+            return "discovery", enriched_entities, "follow_up_request"
+
+        return "refine_recommendations", enriched_entities, "follow_up_request"
 
     if confidence is not None and confidence >= 0.7:
         return intent, entities, conversation_act
@@ -209,6 +252,23 @@ def resolve_dialogue_context(
         return "add_to_cart", entities, "selection"
 
     return intent, entities, conversation_act
+
+
+def _merge_detected_entities(primary: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(primary or {})
+
+    for key, value in (fallback or {}).items():
+        if key not in merged or merged.get(key) in (None, "", [], {}):
+            merged[key] = value
+
+    if isinstance(merged.get("tags"), list) and isinstance(fallback.get("tags"), list):
+        combined_tags = []
+        for tag in merged["tags"] + fallback["tags"]:
+            if isinstance(tag, str) and tag not in combined_tags:
+                combined_tags.append(tag)
+        merged["tags"] = combined_tags
+
+    return merged
 
 
 def infer_conversation_act(message: str, state: Dict[str, Any]) -> str:

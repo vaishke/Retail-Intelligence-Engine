@@ -4,6 +4,9 @@ from copy import deepcopy
 
 DEFAULT_RECOMMENDATION_STATE = {
     "category": None,
+    "subcategory": None,
+    "product_query": None,
+    "tags": [],
     "price_min": None,
     "price_max": None,
     "occasion": None,
@@ -53,7 +56,11 @@ def initialize_recommendation_state(raw_state=None):
     if isinstance(raw_state, dict):
         for key in state:
             if key in raw_state:
-                state[key] = raw_state.get(key)
+                if key == "tags":
+                    tags = raw_state.get(key) or []
+                    state[key] = list(tags) if isinstance(tags, list) else []
+                else:
+                    state[key] = raw_state.get(key)
     return state
 
 
@@ -88,9 +95,46 @@ def merge_recommendation_state(existing_state, detected_updates):
         state["price_min"] = updates.pop("price_min", None)
         state["price_max"] = updates.pop("price_max", None)
 
-    for key in ("category", "occasion", "price_min", "price_max"):
+    for key in ("category", "subcategory", "product_query", "occasion", "price_min", "price_max"):
         if key in updates:
             state[key] = updates[key]
+
+    if "tags" in updates:
+        incoming_tags = updates.get("tags") or []
+        merged_tags = []
+        for tag in list(state.get("tags") or []) + list(incoming_tags):
+            if isinstance(tag, str) and tag.strip():
+                normalized = tag.strip()
+                if normalized not in merged_tags:
+                    merged_tags.append(normalized)
+        state["tags"] = merged_tags
+
+    return state
+
+
+def merge_constraint_updates(existing_state, detected_constraints=None):
+    state = initialize_recommendation_state(existing_state)
+    constraints = dict(detected_constraints or {})
+
+    for key in ("category", "subcategory", "product_query"):
+        value = constraints.get(key)
+        if isinstance(value, str) and value.strip():
+            state[key] = value.strip()
+
+    incoming_tags = constraints.get("tags") or []
+    if incoming_tags:
+        merged_tags = []
+        for tag in list(state.get("tags") or []) + list(incoming_tags):
+            if isinstance(tag, str) and tag.strip():
+                normalized = tag.strip()
+                if normalized not in merged_tags:
+                    merged_tags.append(normalized)
+        state["tags"] = merged_tags
+
+    price_range = constraints.get("price_range")
+    if isinstance(price_range, (list, tuple)) and len(price_range) == 2:
+        state["price_min"] = price_range[0]
+        state["price_max"] = price_range[1]
 
     return state
 
@@ -109,6 +153,10 @@ def build_recommendation_filters(state):
         else:
             filters["category"] = category
 
+    subcategory = normalized_state.get("subcategory")
+    if subcategory:
+        filters["subcategory"] = subcategory
+
     price_min = normalized_state.get("price_min")
     price_max = normalized_state.get("price_max")
     if price_min is not None or price_max is not None:
@@ -121,8 +169,16 @@ def build_recommendation_filters(state):
     if occasion:
         tags.append(occasion)
 
+    stored_tags = normalized_state.get("tags") or []
+    if stored_tags:
+        tags.extend(stored_tags)
+
     if tags:
         filters["tags"] = list(dict.fromkeys(tags))
+
+    product_query = normalized_state.get("product_query")
+    if product_query:
+        filters["product_query"] = product_query
 
     return filters
 
@@ -138,7 +194,12 @@ def get_missing_recommendation_fields(state):
     normalized_state = initialize_recommendation_state(state)
     missing = []
 
-    if not normalized_state.get("category"):
+    has_product_context = any(
+        normalized_state.get(field)
+        for field in ("category", "subcategory", "product_query")
+    ) or bool(normalized_state.get("tags"))
+
+    if not has_product_context:
         missing.append("category")
 
     if normalized_state.get("price_min") is None and normalized_state.get("price_max") is None:
@@ -216,3 +277,11 @@ def _extract_price_range(text):
         "price_min": None,
         "price_max": numbers[0],
     }
+
+
+def has_recommendation_context(state):
+    normalized_state = initialize_recommendation_state(state)
+    return any(
+        normalized_state.get(field)
+        for field in ("category", "subcategory", "product_query", "occasion", "price_min", "price_max")
+    ) or bool(normalized_state.get("tags"))

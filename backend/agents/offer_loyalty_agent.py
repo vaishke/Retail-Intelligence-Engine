@@ -76,7 +76,7 @@ class OfferLoyaltyAgent:
     # ------------------------
     # MAIN CHECKOUT FUNCTION
     # ------------------------
-    def process_checkout(self, user_id, cart_items, coupon_code=None, use_points=0):
+    def process_checkout(self, user_id, cart_items, coupon_code=None, use_points=0, session_id=None):
         """
         cart_items: [{"product_id": ObjectId, "qty": Number, "price": Number}]
         """
@@ -129,7 +129,7 @@ class OfferLoyaltyAgent:
         # 8️⃣ Save order according to schema
         order_doc = {
             "user_id": user_id,
-            "session_id": None,
+            "session_id": session_id,
             "items": [
                 {"product_id": item["product_id"], "qty": item["qty"], "price": item["price"]}
                 for item in cart_items

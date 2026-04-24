@@ -11,6 +11,7 @@ from typing import Dict, Any
 
 from sales_graph.state import SessionState
 from services.cart_service import CartService
+from services.session_service import get_durable_graph_context, recover_checkout_context
 
 from sales_graph.nodes.intent_detector import intent_detector_node
 from sales_graph.nodes.sales_planner import sales_planner_node, post_worker_evaluation
@@ -118,6 +119,29 @@ def _load_shared_cart(user_id: str) -> list[Dict[str, Any]]:
     return cart_result.get("cart", [])
 
 
+def _load_durable_state(session_id: str, user_id: str, cart_items: list[Dict[str, Any]] | None = None) -> Dict[str, Any]:
+    durable_context = get_durable_graph_context(session_id)
+    state = {
+        "checkout_context": durable_context.get("checkout_context"),
+        "checkout_stage": durable_context.get("checkout_stage"),
+        "payment_method": durable_context.get("payment_method"),
+        "payment_idempotency_key": durable_context.get("payment_idempotency_key"),
+        "loyalty_data": durable_context.get("loyalty_data"),
+    }
+    if state.get("checkout_context"):
+        return state
+
+    recovered_context = recover_checkout_context(
+        user_id=user_id,
+        session_id=session_id,
+        cart_items=cart_items or [],
+    )
+    for key, value in recovered_context.items():
+        if state.get(key) is None:
+            state[key] = value
+    return state
+
+
 # ─── Helper function to invoke the graph ───────────────────────────
 def run_sales_graph(
     user_id: str,
@@ -147,6 +171,7 @@ def run_sales_graph(
         from sales_graph.state import create_initial_state
         input_state = create_initial_state(user_id, session_id, channel, message)
         input_state["cart_items"] = _load_shared_cart(user_id)
+        input_state.update(_load_durable_state(session_id, user_id, input_state["cart_items"]))
         _seen_threads.add(thread_id)
     else:
         # Subsequent messages — only send the fields that change each turn.
@@ -167,6 +192,7 @@ def run_sales_graph(
             "response": None,
             "agent_call_history": [],
         }
+        input_state.update(_load_durable_state(session_id, user_id, input_state["cart_items"]))
 
     # Patch in any extra fields from the API request
     if extras:

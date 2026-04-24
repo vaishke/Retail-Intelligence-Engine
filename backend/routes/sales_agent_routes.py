@@ -4,7 +4,8 @@ from services.session_service import (
     create_session,
     update_session,
     end_session,
-    delete_session
+    delete_session,
+    save_durable_graph_context,
 )
 from sales_graph.graph import run_sales_graph
 from db.database import sessions_collection
@@ -69,6 +70,8 @@ def sales_chat(
             message=user_message,
             extras=payload.get("extras")
         )
+
+        save_durable_graph_context(session_id, result)
 
         bot_reply = result.get("response", {}).get("message", "")
 

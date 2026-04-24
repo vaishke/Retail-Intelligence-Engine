@@ -62,6 +62,7 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
     checkout_context = state.get("loyalty_data") or state.get("checkout_context") or {}
     checkout_context_matches = checkout_context_matches_cart(state)
     checkout_stage = state.get("checkout_stage")
+    checkout_stage_active = checkout_stage in {"summary_ready", "awaiting_payment_method", "payment_in_progress"}
     
     # ── Discovery ───────────────────────────────────────────────────
     if intent == "discovery" or intent == "refine_recommendations":
@@ -235,10 +236,7 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
 
     if intent == "payment_method_selection":
         chosen_payment_method = state.get("intent_entities", {}).get("payment_method") or state.get("payment_method")
-        in_checkout_flow = (
-            checkout_stage in {"summary_ready", "awaiting_payment_method", "payment_in_progress"}
-            or bool(checkout_context)
-        ) and checkout_context_matches
+        in_checkout_flow = checkout_stage_active and (bool(checkout_context) or bool(state.get("cart_items")))
         if not in_checkout_flow:
             if state.get("cart_items") and chosen_payment_method:
                 return {

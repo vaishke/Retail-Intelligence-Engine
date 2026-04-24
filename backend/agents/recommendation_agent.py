@@ -11,7 +11,9 @@ from services.recommendation_state_service import (
     build_recommendation_input,
     extract_state_updates,
     get_missing_recommendation_fields,
+    has_recommendation_context,
     initialize_recommendation_state,
+    merge_constraint_updates,
     merge_recommendation_state,
 )
 from services.session_service import (
@@ -777,6 +779,7 @@ class RecommendationAgent:
         current_state = get_recommendation_state(session_id)
         detected_updates = extract_state_updates(user_query)
         merged_state = merge_recommendation_state(current_state, detected_updates)
+        merged_state = merge_constraint_updates(merged_state, additional_constraints)
         save_recommendation_state(session_id, merged_state)
 
         if persist_messages and user_query and user_query.strip():
@@ -847,10 +850,45 @@ class RecommendationAgent:
         if combined_tags:
             merged["tags"] = list(dict.fromkeys(combined_tags))
 
-        if user_query:
-            merged["product_query"] = user_query
+        if state_filters.get("subcategory") and not merged.get("subcategory"):
+            merged["subcategory"] = state_filters["subcategory"]
+
+        effective_product_query = RecommendationAgent._resolve_effective_product_query(
+            user_query=user_query,
+            merged_constraints=merged,
+            state_filters=state_filters,
+        )
+        if effective_product_query:
+            merged["product_query"] = effective_product_query
 
         return merged
+
+    @staticmethod
+    def _resolve_effective_product_query(user_query="", merged_constraints=None, state_filters=None):
+        merged_constraints = merged_constraints or {}
+        state_filters = state_filters or {}
+
+        stored_query = state_filters.get("product_query")
+        current_query = str(user_query or "").strip()
+        normalized_current = current_query.lower()
+
+        looks_like_follow_up = bool(current_query) and not any(
+            token in normalized_current
+            for token in ["show", "recommend", "suggest", "find", "looking for", "need", "want", "browse"]
+        )
+
+        if looks_like_follow_up:
+            slot_only_updates = extract_state_updates(current_query)
+            if slot_only_updates and has_recommendation_context(state_filters):
+                return stored_query or merged_constraints.get("product_query")
+
+        if merged_constraints.get("product_query"):
+            return merged_constraints["product_query"]
+
+        if current_query:
+            return current_query
+
+        return stored_query or merged_constraints.get("product_query")
 
     @staticmethod
     def _save_last_recommendations(session_id, recommendations):

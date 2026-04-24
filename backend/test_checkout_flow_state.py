@@ -1,7 +1,21 @@
 import unittest
 from unittest.mock import patch
+import sys
+import types
+
+sentence_transformers_stub = types.ModuleType("sentence_transformers")
+
+
+class _DummySentenceTransformer:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+sentence_transformers_stub.SentenceTransformer = _DummySentenceTransformer
+sys.modules.setdefault("sentence_transformers", sentence_transformers_stub)
 
 from sales_graph.nodes.cart_manager import cart_manager_node
+from sales_graph.graph import _load_durable_state
 from sales_graph.nodes.intent_detector import classify_intent_rules, extract_entities_rules, intent_detector_node
 from sales_graph.nodes.loyalty_offers import _cart_signature
 from sales_graph.nodes.response_generator import response_generator_node
@@ -174,6 +188,31 @@ class CheckoutFlowStateTests(unittest.TestCase):
         self.assertEqual(result["current_intent"], "checkout_confirmation")
         self.assertEqual(result["conversation_act"], "confirmation")
 
+    def test_upi_follow_up_with_llm_missing_entities_still_selects_payment_method(self):
+        state = {
+            "latest_user_message": "upi",
+            "checkout_stage": "awaiting_payment_method",
+            "session_id": "session-123",
+        }
+
+        with patch("sales_graph.nodes.intent_detector.get_recent_chat_turns", return_value=[]), patch(
+            "sales_graph.nodes.intent_detector.classify_with_groq",
+            return_value={
+                "intent": "general_query",
+                "entities": {},
+                "conversation_act": "new_request",
+                "confidence": 0.96,
+            },
+        ), patch("sales_graph.nodes.intent_detector.os.getenv", return_value="test-key"), patch(
+            "sales_graph.nodes.intent_detector.get_recommendation_state",
+            return_value={},
+        ):
+            result = intent_detector_node(state)
+
+        self.assertEqual(result["current_intent"], "payment_method_selection")
+        self.assertEqual(result["conversation_act"], "selection")
+        self.assertEqual(result["intent_entities"]["payment_method"], "UPI")
+
     def test_checkout_intent_refreshes_loyalty_data_when_cart_signature_changes(self):
         state = {
             "cart_items": [{"product_id": "p2", "name": "Boys Cargo Shorts", "qty": 1, "price": 699}],
@@ -223,6 +262,55 @@ class CheckoutFlowStateTests(unittest.TestCase):
         self.assertIsNone(result["loyalty_data"])
         self.assertIsNone(result["payment_status"])
         self.assertIsNone(result["checkout_stage"])
+
+    @patch("sales_graph.graph.recover_checkout_context")
+    @patch("sales_graph.graph.get_durable_graph_context")
+    def test_load_durable_state_hydrates_checkout_context(self, mock_get_durable_graph_context, mock_recover_checkout_context):
+        mock_get_durable_graph_context.return_value = {
+            "checkout_context": {"order_id": "order-123", "final_amount": 1599, "cart_signature": "sig"},
+            "checkout_stage": "awaiting_payment_method",
+            "payment_method": "UPI",
+            "payment_idempotency_key": "session_hash",
+            "loyalty_data": {"order_id": "order-123", "final_amount": 1599, "cart_signature": "sig"},
+        }
+        mock_recover_checkout_context.return_value = {}
+
+        result = _load_durable_state("session-123", "user-123", [])
+
+        self.assertEqual(result["checkout_stage"], "awaiting_payment_method")
+        self.assertEqual(result["payment_method"], "UPI")
+        self.assertEqual(result["checkout_context"]["order_id"], "order-123")
+
+    @patch("sales_graph.graph.recover_checkout_context")
+    @patch("sales_graph.graph.get_durable_graph_context")
+    def test_load_durable_state_recovers_pending_order_when_session_context_missing(
+        self,
+        mock_get_durable_graph_context,
+        mock_recover_checkout_context,
+    ):
+        mock_get_durable_graph_context.return_value = {
+            "checkout_context": None,
+            "checkout_stage": None,
+            "payment_method": None,
+            "payment_idempotency_key": None,
+            "loyalty_data": None,
+        }
+        mock_recover_checkout_context.return_value = {
+            "checkout_context": {"order_id": "order-999", "final_amount": 1999, "cart_signature": "sig"},
+            "checkout_stage": "awaiting_payment_method",
+            "payment_method": None,
+            "payment_idempotency_key": None,
+            "loyalty_data": {"order_id": "order-999", "final_amount": 1999, "cart_signature": "sig"},
+        }
+
+        result = _load_durable_state(
+            "session-999",
+            "user-999",
+            [{"product_id": "p1", "qty": 1, "price": 1999}],
+        )
+
+        self.assertEqual(result["checkout_stage"], "awaiting_payment_method")
+        self.assertEqual(result["checkout_context"]["order_id"], "order-999")
 
 
 if __name__ == "__main__":

@@ -42,6 +42,7 @@ def loyalty_offers_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     
     user_id = state.get("user_id")
+    session_id = state.get("session_id")
     cart_items = state.get("cart_items", [])
     coupon_code = state.get("coupon_code")
     use_points = state.get("use_points", 0)
@@ -75,6 +76,7 @@ def loyalty_offers_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         result = loyalty_agent.process_checkout(
             user_id=ObjectId(user_id) if isinstance(user_id, str) else user_id,
             cart_items=formatted_cart,
+            session_id=session_id,
             coupon_code=coupon_code,
             use_points=use_points
         )
