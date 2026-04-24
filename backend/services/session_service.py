@@ -2,6 +2,8 @@ from db.database import sessions_collection
 from datetime import datetime
 import uuid
 
+from services.recommendation_state_service import initialize_recommendation_state
+
 def create_session(user_id, channel):
     session_id = str(uuid.uuid4())
 
@@ -20,7 +22,8 @@ def create_session(user_id, channel):
             "selected_products": [],
             "last_recommendations": [],
             "last_viewed_product": None,
-            "pending_action": None
+            "pending_action": None,
+            "recommendation_state": {}
         },
 
         "metadata": {
@@ -74,6 +77,28 @@ def update_session(session_id, updates):
         }
     )
     return get_session(session_id)
+
+
+def get_recommendation_state(session_id):
+    session = get_session(session_id)
+    if not session:
+        return initialize_recommendation_state({})
+
+    context = session.get("context", {})
+    return initialize_recommendation_state(context.get("recommendation_state"))
+
+
+def save_recommendation_state(session_id, recommendation_state):
+    sessions_collection.update_one(
+        {"_id": session_id},
+        {
+            "$set": {
+                "context.recommendation_state": initialize_recommendation_state(recommendation_state)
+            },
+            "$currentDate": {"metadata.last_updated": True}
+        }
+    )
+    return get_recommendation_state(session_id)
 
 def delete_session(session_id):
     result = sessions_collection.delete_one({"_id": session_id})

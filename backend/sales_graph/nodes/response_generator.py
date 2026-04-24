@@ -128,17 +128,28 @@ def format_error_response(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     error = state.get("last_error") or {}
 
+    if error.get("code") == "MISSING_RECOMMENDATION_FIELDS":
+        details = error.get("details") or {}
+        return {
+            "message": error.get("message", "I need a little more detail before I recommend products."),
+            "prompt": None,
+            "data": {
+                "missing_fields": details.get("missing_fields", []),
+                "state": details.get("state", {}),
+            }
+        }
+
     if error.get("code") == "NO_MATCHING_PRODUCTS":
         product_query = state.get("intent_entities", {}).get("product_query")
         if product_query:
             return {
-                "message": f"I couldn't find an exact match for '{product_query}'.",
-                "prompt": "Try a broader search, a different category, or a price range and I'll look again.",
+                "message": f"I couldn’t find a close catalog match for '{product_query}' just yet.",
+                "prompt": "Try a broader style like ethnic wear, sarees, kurtas, dresses, or share a budget and I’ll narrow it down for you.",
                 "data": {}
             }
         return {
-            "message": "I couldn't find matching products for that request.",
-            "prompt": "Try a broader search, a different category, or a price range and I'll look again.",
+            "message": "I couldn’t find matching products for that request yet.",
+            "prompt": "Try a broader style, a category, or a budget and I’ll suggest the best options.",
             "data": {}
         }
 
@@ -181,10 +192,24 @@ def format_default_response(state: Dict[str, Any]) -> Dict[str, Any]:
     
     if last_worker == "recommendation_agent":
         recommended_items = state.get("recommended_items", [])
+        entities = state.get("intent_entities", {}) or {}
+        product_query = entities.get("product_query")
+        subcategory = entities.get("subcategory")
+        category = entities.get("category")
+
+        if product_query:
+            message = f"Here are a few picks I’d suggest for {product_query}:"
+        elif subcategory:
+            message = f"Here are a few {subcategory.lower()} options that should suit you:"
+        elif category:
+            message = f"I picked a few good options from {category.lower()} for you:"
+        else:
+            message = f"I found {len(recommended_items)} option(s) you might like:"
+
         return {
-            "message": f"I found {len(recommended_items)} option(s) you might like:",
+            "message": message,
             "data": {"recommendations": recommended_items},
-            "prompt": "If one catches your eye, I can add it to your cart or check availability."
+            "prompt": "If you like one, I can add it to your cart, show more similar picks, or narrow it by budget, color, or occasion."
         }
 
     elif last_worker == "cart_manager":
