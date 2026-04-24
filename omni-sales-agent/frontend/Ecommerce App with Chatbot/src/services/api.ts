@@ -64,6 +64,15 @@ export async function fetchProducts() {
   return res.json();
 }
 
+export async function fetchProductById(productId: string) {
+  const res = await fetch(`${BASE_URL}/products/${productId}`);
+  const data = await res.json();
+  if (!res.ok || data?.error) {
+    throw new Error(data?.error || "Failed to fetch product");
+  }
+  return data;
+}
+
 export async function fetchCart(userId: string) {
   const res = await fetch(`${BASE_URL}/cart/${userId}`);
   return res.json();
@@ -75,7 +84,11 @@ export async function addToCart(userId: string, productId: string, quantity: num
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id: userId, product_id: productId, quantity }),
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok || data?.success === false) {
+    throw new Error(data?.detail || data?.message || "Failed to update cart");
+  }
+  return data;
 }
 
 export async function placeOrder(payload: any) {

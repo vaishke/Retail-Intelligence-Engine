@@ -1,7 +1,9 @@
 import unittest
 from unittest.mock import patch
 
+from sales_graph.nodes.cart_manager import cart_manager_node
 from sales_graph.nodes.intent_detector import classify_intent_rules, extract_entities_rules, intent_detector_node
+from sales_graph.nodes.loyalty_offers import _cart_signature
 from sales_graph.nodes.response_generator import response_generator_node
 from sales_graph.nodes.sales_planner import planner_policy
 
@@ -171,6 +173,56 @@ class CheckoutFlowStateTests(unittest.TestCase):
 
         self.assertEqual(result["current_intent"], "checkout_confirmation")
         self.assertEqual(result["conversation_act"], "confirmation")
+
+    def test_checkout_intent_refreshes_loyalty_data_when_cart_signature_changes(self):
+        state = {
+            "cart_items": [{"product_id": "p2", "name": "Boys Cargo Shorts", "qty": 1, "price": 699}],
+            "inventory_verified": True,
+            "inventory_checked_at": "2026-04-24T10:00:00",
+            "checkout_context": {
+                "order_id": "old-order",
+                "final_amount": 3299,
+                "cart_signature": _cart_signature(
+                    [{"product_id": "p1", "name": "Urban Flex Sneakers", "qty": 1, "price": 3299}]
+                ),
+                "calculated_at": "2026-04-24T10:00:00",
+            },
+            "silent_chains_this_turn": 0,
+        }
+
+        result = planner_policy("checkout_intent", state)
+
+        self.assertEqual(result["next_action"], "loyalty_offers_agent")
+
+    @patch("sales_graph.nodes.cart_manager.CartService.add_or_update_item")
+    @patch("sales_graph.nodes.cart_manager.CartService.resolve_product_reference")
+    def test_cart_update_clears_stale_checkout_context(self, mock_resolve_product, mock_add_or_update_item):
+        mock_resolve_product.return_value = {"product_id": "p2", "name": "Boys Cargo Shorts", "price": 699}
+        mock_add_or_update_item.return_value = {
+            "success": True,
+            "cart": [{"product_id": "p2", "name": "Boys Cargo Shorts", "qty": 1, "price": 699}],
+        }
+
+        result = cart_manager_node(
+            {
+                "current_intent": "add_to_cart",
+                "user_id": "user-1",
+                "session_id": "session-1",
+                "intent_entities": {"product_query": "boys cargo shorts", "quantity": 1},
+                "recommended_items": [],
+                "cart_items": [],
+                "agent_call_history": [],
+                "checkout_context": {"order_id": "old-order", "final_amount": 3299},
+                "loyalty_data": {"order_id": "old-order", "final_amount": 3299},
+                "payment_status": {"success": True},
+                "checkout_stage": "completed",
+            }
+        )
+
+        self.assertIsNone(result["checkout_context"])
+        self.assertIsNone(result["loyalty_data"])
+        self.assertIsNone(result["payment_status"])
+        self.assertIsNone(result["checkout_stage"])
 
 
 if __name__ == "__main__":

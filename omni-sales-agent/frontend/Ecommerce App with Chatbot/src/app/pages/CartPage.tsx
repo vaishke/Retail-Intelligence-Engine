@@ -58,19 +58,24 @@ export function CartPage() {
   const cartItems = cart.map(item => {
     const product = products.find((p: any) => (p._id || p.id) === (item.product_id || item.productId));
     const quantity = item.quantity || item.qty || 1;
-    const totalStock = (product?.available_stores || []).reduce(
-      (sum: number, store: any) => sum + (store.stock || 0),
-      0
-    );
+    const totalStock =
+      product?.stock ??
+      (product?.available_stores || []).reduce(
+        (sum: number, store: any) => sum + (store.stock || 0),
+        0
+      );
 
     return {
       ...item,
       quantity,
+      available_quantity: item.available_quantity ?? totalStock ?? 0,
+      has_stock_issue: item.has_stock_issue ?? totalStock <= 0,
+      stock_message: item.stock_message,
       product: product
         ? {
             ...product,
             imageUrl: product.image || product.images?.[0] || '',
-            totalStock,
+            totalStock: totalStock ?? 0,
           }
         : null,
     };
@@ -91,8 +96,9 @@ export function CartPage() {
       await addToCart(userId, productId, newQuantity);
       window.dispatchEvent(new Event("storage"));
       await loadData();
-    } catch {
-      toast.error("Failed to update cart");
+      toast.success('Cart updated');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update cart");
     }
   };
 
@@ -112,8 +118,8 @@ export function CartPage() {
     }
   };
 
-  const availableItems = cartItems.filter(item => item.product?.totalStock > 0);
-  const unavailableItems = cartItems.filter(item => item.product?.totalStock <= 0);
+  const availableItems = cartItems.filter(item => !item.has_stock_issue);
+  const unavailableItems = cartItems.filter(item => item.has_stock_issue);
 
   const subtotal = availableItems.reduce(
     (sum, item) => sum + item.product.price * item.quantity,
@@ -174,7 +180,7 @@ export function CartPage() {
                               <Badge variant="outline">{item.product.subcategory}</Badge>
                             )}
                             <Badge variant="outline" className="text-green-700 border-green-200 bg-green-50">
-                              {item.product.totalStock} in stock
+                              {item.available_quantity} available
                             </Badge>
                           </div>
 
@@ -209,6 +215,7 @@ export function CartPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
+                                  disabled={item.quantity >= item.available_quantity}
                                   onClick={() =>
                                     updateQuantity(item.product_id || item.productId, item.quantity + 1)
                                   }
@@ -255,7 +262,7 @@ export function CartPage() {
                         <div>
                           <p className="font-semibold">{item.product.name}</p>
                           <p className="text-sm text-muted-foreground">{item.product.category}</p>
-                          <Badge variant="destructive" className="mt-2">Out of Stock</Badge>
+                          <Badge variant="destructive" className="mt-2">{item.stock_message || 'Out of Stock'}</Badge>
                         </div>
                       </div>
 

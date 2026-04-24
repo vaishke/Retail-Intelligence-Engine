@@ -40,7 +40,7 @@ export function ProductCard({ product }: ProductCardProps) {
       toast.success('Added to cart');
     } catch (error) {
       console.error(error);
-      toast.error('Failed to add to cart');
+      toast.error(error instanceof Error ? error.message : 'Failed to add to cart');
     }
   };
 

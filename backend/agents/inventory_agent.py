@@ -7,7 +7,7 @@ from datetime import datetime
 class InventoryAgent:
 
     @staticmethod
-    def check_stock(product_id, store_id=None):
+    def check_stock(product_id, store_id=None, quantity=1):
         product_oid = ObjectId(product_id)
         records = list(inventory_collection.find({"product_id": product_oid}))
 
@@ -16,9 +16,12 @@ class InventoryAgent:
                 "success": False,
                 "reason": "NOT_FOUND",
                 "product_id": product_id,
-                "isAvailable": False
+                "isAvailable": False,
+                "requestedQuantity": max(int(quantity or 1), 1),
+                "availableQuantity": 0,
             }
 
+        requested_quantity = max(int(quantity or 1), 1)
         total_quantity = sum(r.get("quantity", 0) for r in records)
 
         location_quantity = 0
@@ -29,6 +32,7 @@ class InventoryAgent:
 
         product = products_collection.find_one({"_id": product_oid})
         product_name = product.get("name") if product else ""
+        available_quantity = location_quantity if store_id else total_quantity
 
         return {
             "success": True,
@@ -36,7 +40,9 @@ class InventoryAgent:
             "productName": product_name,
             "totalStock": total_quantity,
             "storeStock": location_quantity,
-            "isAvailable": total_quantity > 0
+            "requestedQuantity": requested_quantity,
+            "availableQuantity": available_quantity,
+            "isAvailable": available_quantity >= requested_quantity,
         }
 
     @staticmethod
@@ -115,7 +121,8 @@ class InventoryAgent:
         if action == "check_stock":
             return InventoryAgent.check_stock(
                 product_id=inventory_request.get("product_id"),
-                store_id=inventory_request.get("store_id")
+                store_id=inventory_request.get("store_id"),
+                quantity=inventory_request.get("quantity", 1),
             )
 
         elif action == "get_store_stock":

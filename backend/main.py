@@ -2,7 +2,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from db.database import products_collection
+from bson import ObjectId
+
+from db.database import inventory_collection, products_collection
 
 from routes.sales_agent_routes import router as sales_router
 from routes.inventory_routes import router as inventory_router
@@ -81,10 +83,62 @@ def serialize_product(product):
     return product
 
 
+def _inventory_snapshot_for_products(product_ids: list[ObjectId]) -> dict[str, dict]:
+    if not product_ids:
+        return {}
+
+    pipeline = [
+        {"$match": {"product_id": {"$in": product_ids}}},
+        {
+            "$group": {
+                "_id": "$product_id",
+                "stock": {"$sum": {"$ifNull": ["$quantity", 0]}},
+                "available_stores": {
+                    "$push": {
+                        "store_id": "$store_id",
+                        "stock": {"$ifNull": ["$quantity", 0]},
+                    }
+                },
+            }
+        },
+    ]
+
+    snapshots: dict[str, dict] = {}
+    for row in inventory_collection.aggregate(pipeline):
+        snapshots[str(row["_id"])] = {
+            "stock": row.get("stock", 0),
+            "available_stores": row.get("available_stores", []),
+        }
+
+    return snapshots
+
+
+def enrich_product_with_inventory(product: dict, inventory_snapshot: dict[str, dict]) -> dict:
+    serialized = serialize_product(product)
+    snapshot = inventory_snapshot.get(serialized["_id"], {})
+    serialized["stock"] = int(snapshot.get("stock", 0) or 0)
+    serialized["available_stores"] = snapshot.get("available_stores", [])
+    return serialized
+
+
 @app.get("/products")
 def get_products():
     try:
         products = list(products_collection.find())
-        return [serialize_product(p) for p in products]
+        inventory_snapshot = _inventory_snapshot_for_products([p["_id"] for p in products if p.get("_id")])
+        return [enrich_product_with_inventory(p, inventory_snapshot) for p in products]
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/products/{product_id}")
+def get_product(product_id: str):
+    try:
+        product = products_collection.find_one({"_id": ObjectId(product_id)})
+        if not product:
+            return {"error": "Product not found"}
+
+        inventory_snapshot = _inventory_snapshot_for_products([product["_id"]])
+        return enrich_product_with_inventory(product, inventory_snapshot)
     except Exception as e:
         return {"error": str(e)}

@@ -60,6 +60,7 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
     Pure rules-based for MVP. Can be upgraded to LLM later.
     """
     checkout_context = state.get("loyalty_data") or state.get("checkout_context") or {}
+    checkout_context_matches = checkout_context_matches_cart(state)
     checkout_stage = state.get("checkout_stage")
     
     # ── Discovery ───────────────────────────────────────────────────
@@ -161,7 +162,7 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
             }
         
         # Check if loyalty data is stale or missing
-        if not checkout_context or is_stale(state, "loyalty"):
+        if not checkout_context or is_stale(state, "loyalty") or not checkout_context_matches:
             return {
                 "next_action": "loyalty_offers_agent",
                 "await_confirmation": False,
@@ -234,7 +235,10 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
 
     if intent == "payment_method_selection":
         chosen_payment_method = state.get("intent_entities", {}).get("payment_method") or state.get("payment_method")
-        in_checkout_flow = checkout_stage in {"summary_ready", "awaiting_payment_method", "payment_in_progress"} or bool(checkout_context)
+        in_checkout_flow = (
+            checkout_stage in {"summary_ready", "awaiting_payment_method", "payment_in_progress"}
+            or bool(checkout_context)
+        ) and checkout_context_matches
         if not in_checkout_flow:
             if state.get("cart_items") and chosen_payment_method:
                 return {
@@ -293,7 +297,7 @@ def planner_policy(intent: str, state: Dict[str, Any]) -> Dict[str, Any]:
                 "checkout_stage": "awaiting_payment_method"
             }
 
-        if not checkout_context:
+        if not checkout_context or not checkout_context_matches:
             if state.get("cart_items"):
                 return {
                     "next_action": "loyalty_offers_agent",
@@ -390,9 +394,7 @@ def is_stale(state: Dict[str, Any], data_type: str) -> bool:
         checked_at = state.get("inventory_checked_at")
     elif data_type == "loyalty":
         loyalty_data = state.get("loyalty_data") or state.get("checkout_context") or {}
-        # Note: OfferLoyaltyAgent doesn't return calculated_at in current implementation
-        # For now, assume loyalty data is never stale (you can add this field later)
-        return False
+        checked_at = loyalty_data.get("calculated_at")
     else:
         return True
     
@@ -406,6 +408,33 @@ def is_stale(state: Dict[str, Any], data_type: str) -> bool:
         return True
 
 
+def checkout_context_matches_cart(state: Dict[str, Any]) -> bool:
+    checkout_context = state.get("loyalty_data") or state.get("checkout_context") or {}
+    if not checkout_context:
+        return False
+
+    stored_signature = checkout_context.get("cart_signature")
+    if not stored_signature:
+        return False
+
+    current_signature = _cart_signature(state.get("cart_items", []))
+    return stored_signature == current_signature
+
+
+def _cart_signature(cart_items: list[dict[str, Any]]) -> str:
+    normalized_items = sorted(
+        [
+            (
+                str(item.get("product_id")),
+                int(item.get("qty", item.get("quantity", 1)) or 1),
+                float(item.get("price", 0) or 0),
+            )
+            for item in (cart_items or [])
+        ]
+    )
+    return "|".join(f"{product_id}:{qty}:{price}" for product_id, qty, price in normalized_items)
+
+
 # ─── POST-WORKER SILENT CHAINING RULES (Design Doc Section 8.3) ───
 
 def post_worker_evaluation(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -417,6 +446,7 @@ def post_worker_evaluation(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     last_worker = state.get("last_worker")
     intent = state.get("current_intent")
+    loyalty_data = state.get("loyalty_data") or state.get("checkout_context") or {}
     
     # Rule: recommendation_agent → inventory_agent (if cart has new items)
     if last_worker == "recommendation_agent" and intent == "discovery":

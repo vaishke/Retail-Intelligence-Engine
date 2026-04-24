@@ -59,10 +59,23 @@ def cart_manager_node(state: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     if not result.get("success"):
-        return _error(state, "CART_UPDATE_FAILED", result.get("message", "Unable to update cart"))
+        return _error(
+            state,
+            result.get("code", "CART_UPDATE_FAILED"),
+            result.get("message", "Unable to update cart"),
+        )
 
     return {
         "cart_items": result.get("cart", []),
+        "inventory_status": {},
+        "inventory_verified": False,
+        "inventory_checked_at": None,
+        "loyalty_data": None,
+        "checkout_context": None,
+        "payment_status": None,
+        "payment_idempotency_key": None,
+        "payment_method": None,
+        "checkout_stage": None,
         "last_worker": "cart_manager",
         "agent_call_history": state.get("agent_call_history", []) + ["cart_manager"],
         "last_error": None,

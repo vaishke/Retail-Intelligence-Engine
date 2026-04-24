@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 
+from agents.inventory_agent import InventoryAgent
 from db.database import products_collection, sessions_collection, users_collection
 
 
@@ -17,11 +18,14 @@ class CartService:
             return {"success": False, "message": "User not found", "cart": []}
 
         cart = user.get("cart", {"items": [], "total": 0})
+        serialized_items = CartService._serialize_cart_items(cart.get("items", []))
+        cart_with_inventory = CartService._attach_inventory_status(serialized_items)
         return {
             "success": True,
-            "cart": CartService._serialize_cart_items(cart.get("items", [])),
+            "cart": cart_with_inventory,
             "total": cart.get("total", 0),
             "updated_at": cart.get("updated_at"),
+            "has_stock_issues": any(item.get("has_stock_issue") for item in cart_with_inventory),
         }
 
     @staticmethod
@@ -41,6 +45,33 @@ class CartService:
         product = products_collection.find_one({"_id": product_oid})
         if not product:
             return {"success": False, "message": "Product not found"}
+
+        if quantity > 0:
+            stock_result = InventoryAgent.check_stock(product_id=product_id, quantity=quantity)
+            if not stock_result.get("success"):
+                return {
+                    "success": False,
+                    "code": "OUT_OF_STOCK",
+                    "message": f"{product.get('name', 'This product')} is currently out of stock.",
+                    "available_quantity": 0,
+                }
+
+            available_quantity = stock_result.get("availableQuantity", 0)
+            if available_quantity <= 0:
+                return {
+                    "success": False,
+                    "code": "OUT_OF_STOCK",
+                    "message": f"{product.get('name', 'This product')} is currently out of stock.",
+                    "available_quantity": 0,
+                }
+
+            if quantity > available_quantity:
+                return {
+                    "success": False,
+                    "code": "INSUFFICIENT_STOCK",
+                    "message": f"Only {available_quantity} unit(s) of {product.get('name', 'this product')} are available.",
+                    "available_quantity": available_quantity,
+                }
 
         existing_items = user.get("cart", {}).get("items", [])
         updated_items: List[Dict[str, Any]] = []
@@ -86,7 +117,9 @@ class CartService:
             },
         )
 
-        serialized_items = CartService._serialize_cart_items(updated_items)
+        serialized_items = CartService._attach_inventory_status(
+            CartService._serialize_cart_items(updated_items)
+        )
 
         if session_id:
             sessions_collection.update_one(
@@ -220,6 +253,49 @@ class CartService:
                 "price": item.get("price", 0),
             })
         return serialized
+
+    @staticmethod
+    def _attach_inventory_status(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        enriched_items: List[Dict[str, Any]] = []
+
+        for item in items:
+            qty = int(item.get("qty", item.get("quantity", 1)) or 1)
+            product_id = item.get("product_id")
+            stock_result = None
+
+            if product_id:
+                try:
+                    stock_result = InventoryAgent.check_stock(product_id=product_id, quantity=qty)
+                except Exception:
+                    stock_result = None
+
+            available_quantity = 0
+            is_available = True
+            has_stock_issue = False
+            stock_message = None
+
+            if stock_result and stock_result.get("success"):
+                available_quantity = int(stock_result.get("availableQuantity", 0) or 0)
+                is_available = bool(stock_result.get("isAvailable"))
+            elif stock_result:
+                is_available = False
+
+            if not is_available:
+                has_stock_issue = True
+                if available_quantity <= 0:
+                    stock_message = "Out of stock"
+                else:
+                    stock_message = f"Only {available_quantity} left in stock"
+
+            enriched_items.append({
+                **item,
+                "available_quantity": available_quantity,
+                "is_available": is_available,
+                "has_stock_issue": has_stock_issue,
+                "stock_message": stock_message,
+            })
+
+        return enriched_items
 
     @staticmethod
     def _normalize_text(value: str) -> str:

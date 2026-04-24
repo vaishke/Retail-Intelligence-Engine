@@ -159,6 +159,25 @@ def format_error_response(state: Dict[str, Any]) -> Dict[str, Any]:
             "prompt": "Try naming the product again or pick one from the latest recommendations.",
             "data": {}
         }
+
+    if error.get("code") in {"OUT_OF_STOCK", "INSUFFICIENT_STOCK", "ITEM_UNAVAILABLE", "FULFILMENT_FAILED"}:
+        unavailable_items = error.get("unavailable_items") or []
+        if unavailable_items:
+            first_issue = unavailable_items[0]
+            product_name = first_issue.get("product_name") or "One item in your cart"
+            available_quantity = first_issue.get("available_quantity", 0)
+            if available_quantity <= 0:
+                message = f"{product_name} is out of stock in your cart right now."
+            else:
+                message = f"{product_name} only has {available_quantity} unit(s) available right now."
+        else:
+            message = error.get("message", "One or more items are unavailable.")
+
+        return {
+            "message": message,
+            "prompt": "Please update the cart quantity, remove the item, or ask me for alternatives.",
+            "data": {"unavailable_items": unavailable_items}
+        }
     
     return {
         "message": f"Sorry, something went wrong: {error.get('message', 'Unknown error')}",
@@ -278,12 +297,11 @@ def format_default_response(state: Dict[str, Any]) -> Dict[str, Any]:
                 "data": {"inventory": inventory_status},
                 "prompt": "Would you like to move ahead to checkout?"
             }
-
-            return {
-                "message": "A few items are out of stock, but I can help with alternatives.",
-                "prompt": None,
-                "data": {"inventory": inventory_status}
-            }
+        return {
+            "message": "A few items in your cart are out of stock.",
+            "prompt": "I can help you adjust the cart or find alternatives.",
+            "data": {"inventory": inventory_status}
+        }
     
     elif last_worker == "loyalty_offers_agent":
         loyalty_data = state.get("loyalty_data") or state.get("checkout_context") or {}

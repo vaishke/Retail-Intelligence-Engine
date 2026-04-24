@@ -240,6 +240,8 @@ def post_purchase_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # Post-purchase steps completed successfully
             return {
                 "cart_items": [],
+                "loyalty_data": None,
+                "checkout_context": None,
                 "order_status": {
                     **(state.get("order_status") or {}),
                     "order_id": str(order_id),
@@ -256,6 +258,7 @@ def post_purchase_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     "cart_cleared": result.get("cart_cleared", False),
                 },
                 "checkout_stage": "completed",
+                "payment_idempotency_key": None,
                 "payment_method": None,
                 "last_worker": "post_purchase_agent",
                 "agent_call_history": state.get("agent_call_history", []) + ["post_purchase_agent"],

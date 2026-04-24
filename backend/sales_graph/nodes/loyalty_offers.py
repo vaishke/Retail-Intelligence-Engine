@@ -7,6 +7,21 @@ Wrapper node around agents/offer_loyalty_agent.py
 from typing import Dict, Any
 from agents.offer_loyalty_agent import OfferLoyaltyAgent
 from bson import ObjectId
+from datetime import datetime
+
+
+def _cart_signature(cart_items: list[dict[str, Any]]) -> str:
+    normalized_items = sorted(
+        [
+            (
+                str(item.get("product_id")),
+                int(item.get("qty", item.get("quantity", 1)) or 1),
+                float(item.get("price", 0) or 0),
+            )
+            for item in (cart_items or [])
+        ]
+    )
+    return "|".join(f"{product_id}:{qty}:{price}" for product_id, qty, price in normalized_items)
 
 
 def loyalty_offers_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -65,10 +80,15 @@ def loyalty_offers_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         )
         
         if result.get("success"):
+            enriched_result = {
+                **result,
+                "cart_signature": _cart_signature(cart_items),
+                "calculated_at": datetime.utcnow().isoformat(),
+            }
             # Success path
             return {
-                "loyalty_data": result,
-                "checkout_context": result,
+                "loyalty_data": enriched_result,
+                "checkout_context": enriched_result,
                 "last_worker": "loyalty_offers_agent",
                 "agent_call_history": state.get("agent_call_history", []) + ["loyalty_offers_agent"],
                 "last_error": None

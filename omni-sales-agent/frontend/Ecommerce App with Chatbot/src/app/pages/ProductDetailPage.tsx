@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent } from '../components/ui/card';
-import { fetchProducts, addToCart } from '../../services/api';
+import { fetchProductById, addToCart } from '../../services/api';
 import { ShoppingCart, Star, Minus, Plus, ArrowLeft, Package, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Product } from '../types/product';
@@ -23,11 +23,18 @@ export function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1);
 
   useEffect(() => {
-    fetchProducts().then((data) => {
-      const products = data.products || data;
-      const found = products.find((p: Product) => p._id === id || (p as any).id === id);
-      setProduct(found);
-    });
+    if (!id) {
+      setProduct(null);
+      return;
+    }
+
+    fetchProductById(id)
+      .then((data) => {
+        setProduct(data);
+      })
+      .catch(() => {
+        setProduct(null);
+      });
   }, [id]);
 
   if (!product) {
@@ -65,7 +72,7 @@ export function ProductDetailPage() {
       toast.success(`Added ${quantity} item(s) to cart`);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to add to cart");
+      toast.error(err instanceof Error ? err.message : "Failed to add to cart");
     }
   };
 
@@ -156,7 +163,7 @@ export function ProductDetailPage() {
               <span className="text-sm">
                 {totalStock > 0 ? (
                   <span className="text-green-600 font-semibold">
-                    {totalStock} in stock
+                    {totalStock} in stock across all stores
                   </span>
                 ) : (
                   <span className="text-red-600 font-semibold">Out of stock</span>

@@ -5,6 +5,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 from agents.fulfillment_agent import FulfillmentAgent
+from agents.inventory_agent import InventoryAgent
 from agents.offer_loyalty_agent import OfferLoyaltyAgent
 from agents.payment_agent import PaymentAgent
 from agents.post_purchase_agent import PostPurchaseAgent
@@ -112,6 +113,13 @@ class OrderService:
         formatted_items = OrderService._format_items(items)
         if not formatted_items:
             return {"success": False, "message": "Valid order items are required"}
+
+        stock_validation = OrderService._validate_inventory(
+            formatted_items,
+            data.get("store_location"),
+        )
+        if not stock_validation.get("success"):
+            return stock_validation
 
         loyalty_agent = OfferLoyaltyAgent()
         loyalty_result = loyalty_agent.process_checkout(
@@ -246,6 +254,40 @@ class OrderService:
             )
 
         return formatted
+
+    @staticmethod
+    def _validate_inventory(items: List[Dict[str, Any]], store_location: str | None = None) -> Dict[str, Any]:
+        unavailable_items = []
+
+        for item in items:
+            stock_result = InventoryAgent.check_stock(
+                product_id=item["product_id"],
+                store_id=store_location,
+                quantity=item["qty"],
+            )
+
+            if stock_result.get("isAvailable"):
+                continue
+
+            unavailable_items.append(
+                {
+                    "product_id": str(item["product_id"]),
+                    "requested_quantity": item["qty"],
+                    "available_quantity": stock_result.get("availableQuantity", 0),
+                    "product_name": stock_result.get("productName"),
+                    "store_location": store_location,
+                }
+            )
+
+        if unavailable_items:
+            return {
+                "success": False,
+                "stage": "inventory",
+                "message": "Some items in the cart are out of stock.",
+                "unavailable_items": unavailable_items,
+            }
+
+        return {"success": True}
 
     @staticmethod
     def _make_json_safe(value: Any) -> Any:

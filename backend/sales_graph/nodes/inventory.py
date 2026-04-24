@@ -71,18 +71,27 @@ def inventory_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
             product_id = item.get("product_id")
             if not product_id:
                 continue
+            requested_quantity = int(item.get("qty", item.get("quantity", 1)) or 1)
             
             # Call your existing inventory agent
             result = InventoryAgent.check_stock(
                 product_id=str(product_id),  # Convert ObjectId to string
-                store_id=store_id
+                store_id=store_id,
+                quantity=requested_quantity,
             )
             
             inventory_results[str(product_id)] = result
             
             if not result.get("isAvailable"):
                 all_available = False
-                unavailable_items.append(product_id)
+                unavailable_items.append(
+                    {
+                        "product_id": str(product_id),
+                        "requested_quantity": requested_quantity,
+                        "available_quantity": result.get("availableQuantity", 0),
+                        "product_name": result.get("productName"),
+                    }
+                )
         
         # Success path
         updates = {
