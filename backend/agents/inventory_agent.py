@@ -11,7 +11,7 @@ class InventoryAgent:
         return product_id if isinstance(product_id, ObjectId) else ObjectId(product_id)
 
     @staticmethod
-    def check_stock(product_id, store_id=None):
+    def check_stock(product_id, store_id=None, quantity=1):
         product_oid = InventoryAgent._normalize_product_id(product_id)
         records = list(inventory_collection.find({"product_id": product_oid}))
 

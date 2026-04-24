@@ -26,7 +26,7 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
-  const [sidebarWidth] = useState(340);
+  const [sidebarWidth] = useState(300);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const openProductInNewTab = (productId: string) => {
     const url = `${window.location.origin}/product/${productId}`;
@@ -238,10 +238,12 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
                 <div
                   key={session.id}
                   onClick={() => setCurrentSessionId(session.id)}
-                  className={`group relative p-3 pr-12 rounded-lg cursor-pointer ${currentSessionId === session.id ? 'bg-muted' : 'hover:bg-muted/60'}`}
+                  className={`group flex items-center justify-between gap-2 rounded-lg p-3 cursor-pointer ${
+                    currentSessionId === session.id ? 'bg-muted' : 'hover:bg-muted/60'
+                  }`}
                 >
-                  <div className="min-w-0">
-                    <p className="text-sm truncate whitespace-nowrap overflow-hidden text-ellipsis">
+                  <div className="min-w-0 max-w-[220px] flex-1">
+                    <p className="truncate text-sm whitespace-nowrap overflow-hidden text-ellipsis">
                       {session.title}
                     </p>
                   </div>
@@ -249,10 +251,10 @@ export function Chatbot({ isOpen, onClose }: ChatbotProps) {
                   <Button
                     size="icon"
                     variant="ghost"
-                    className={`absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 transition-opacity ${
+                    className={`h-8 w-8 shrink-0 text-muted-foreground transition-opacity hover:text-foreground ${
                       currentSessionId === session.id
                         ? 'opacity-100'
-                        : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+                        : 'opacity-60 group-hover:opacity-100 focus-visible:opacity-100'
                     }`}
                     onClick={(e) => deleteChat(session.id, e)}
                     aria-label={`Delete ${session.title}`}
