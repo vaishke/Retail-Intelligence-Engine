@@ -7,8 +7,12 @@ from datetime import datetime
 class InventoryAgent:
 
     @staticmethod
-    def check_stock(product_id, store_id=None, quantity=1):
-        product_oid = ObjectId(product_id)
+    def _normalize_product_id(product_id):
+        return product_id if isinstance(product_id, ObjectId) else ObjectId(product_id)
+
+    @staticmethod
+    def check_stock(product_id, store_id=None):
+        product_oid = InventoryAgent._normalize_product_id(product_id)
         records = list(inventory_collection.find({"product_id": product_oid}))
 
         if not records:
@@ -47,7 +51,7 @@ class InventoryAgent:
 
     @staticmethod
     def deduct_stock(product_id, store_id, quantity):
-        product_oid = ObjectId(product_id)
+        product_oid = InventoryAgent._normalize_product_id(product_id)
         updated_record = inventory_collection.find_one_and_update(
             {
                 "product_id": product_oid,
@@ -84,7 +88,7 @@ class InventoryAgent:
 
     @staticmethod
     def get_store_stock(product_id):
-        product_oid = ObjectId(product_id)
+        product_oid = InventoryAgent._normalize_product_id(product_id)
         records = list(inventory_collection.find({"product_id": product_oid}))
 
         if not records:
@@ -113,6 +117,89 @@ class InventoryAgent:
             "totalStock": total_quantity,
             "isAvailable": total_quantity > 0
         }
+
+    @staticmethod
+    def restore_stock(product_id, store_id, quantity):
+        product_oid = InventoryAgent._normalize_product_id(product_id)
+        inventory_collection.update_one(
+            {"product_id": product_oid, "store_id": store_id},
+            {"$inc": {"quantity": quantity}, "$set": {"last_updated": datetime.utcnow()}}
+        )
+
+    @staticmethod
+    def deduct_order_stock(items, store_id=None):
+        allocations = []
+
+        for item in items or []:
+            product_id = item.get("product_id")
+            qty = int(item.get("qty", item.get("quantity", 1)))
+
+            if not product_id or qty <= 0:
+                InventoryAgent._rollback_allocations(allocations)
+                return {
+                    "success": False,
+                    "reason": "INVALID_ORDER_ITEM",
+                    "allocations": allocations,
+                }
+
+            target_store = store_id
+            if not target_store:
+                store_stock = InventoryAgent.get_store_stock(product_id)
+                if not store_stock.get("success"):
+                    InventoryAgent._rollback_allocations(allocations)
+                    return {
+                        "success": False,
+                        "reason": store_stock.get("reason", "STORE_STOCK_LOOKUP_FAILED"),
+                        "product_id": str(product_id),
+                        "allocations": allocations,
+                    }
+
+                for candidate_store, stock_qty in store_stock.get("storeStock", {}).items():
+                    if stock_qty >= qty:
+                        target_store = candidate_store
+                        break
+
+            if not target_store:
+                InventoryAgent._rollback_allocations(allocations)
+                return {
+                    "success": False,
+                    "reason": "INSUFFICIENT_STOCK_OR_NOT_FOUND",
+                    "product_id": str(product_id),
+                    "allocations": allocations,
+                }
+
+            deduction = InventoryAgent.deduct_stock(product_id, target_store, qty)
+            if not deduction.get("success"):
+                InventoryAgent._rollback_allocations(allocations)
+                return {
+                    "success": False,
+                    "reason": deduction.get("reason", "INSUFFICIENT_STOCK_OR_NOT_FOUND"),
+                    "product_id": str(product_id),
+                    "store_id": target_store,
+                    "allocations": allocations,
+                }
+
+            allocations.append(
+                {
+                    "product_id": str(InventoryAgent._normalize_product_id(product_id)),
+                    "qty": qty,
+                    "store_id": target_store,
+                }
+            )
+
+        return {
+            "success": True,
+            "allocations": allocations,
+        }
+
+    @staticmethod
+    def _rollback_allocations(allocations):
+        for allocation in reversed(allocations):
+            InventoryAgent.restore_stock(
+                product_id=allocation["product_id"],
+                store_id=allocation["store_id"],
+                quantity=allocation["qty"],
+            )
 
     @staticmethod
     def handle_request(inventory_request):

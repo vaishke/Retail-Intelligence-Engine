@@ -7,6 +7,13 @@ from bson import ObjectId
 class FulfillmentAgent:
 
     @staticmethod
+    def _serialize_item(item):
+        return {
+            **item,
+            "product_id": str(item.get("product_id")) if item.get("product_id") is not None else None,
+        }
+
+    @staticmethod
     def process_order(order: dict):
         """
         Processes an order according to schema:
@@ -14,50 +21,35 @@ class FulfillmentAgent:
         - Fills 'fulfillment' object as per schema
         - Sets order status: FULFILLED / PARTIALLY_FULFILLED / FAILED
         """
-
-        fulfilled = []
-        unfulfilled = []
-
         fulfillment_type = order.get("fulfillment_type")
         store_location = order.get("store_location")
+        order_id = order.get("order_id")
+        if isinstance(order_id, str):
+            order_id = ObjectId(order_id)
 
-        for item in order["items"]:
-            product_id = item["product_id"]
-            qty = item["qty"]
+        existing_order = orders_collection.find_one({"_id": order_id}) if order_id else None
+        inventory_state = (existing_order or {}).get("inventory") or {}
 
-            target_store = store_location
-
-            # If no store specified, pick any store with enough stock
-            if not target_store:
-                store_stock = InventoryAgent.get_store_stock(product_id)
-                if not store_stock.get("success"):
-                    unfulfilled.append(item)
-                    continue
-
-                found_store = None
-                for store_id, stock_qty in store_stock["storeStock"].items():
-                    if stock_qty >= qty:
-                        found_store = store_id
-                        break
-
-                if not found_store:
-                    unfulfilled.append(item)
-                    continue
-
-                target_store = found_store
-
-            deduction = InventoryAgent.deduct_stock(
-                product_id=product_id,
-                store_id=target_store,
-                quantity=qty
+        if inventory_state.get("deducted"):
+            fulfilled = [FulfillmentAgent._serialize_item(item) for item in order["items"]]
+            unfulfilled = []
+        else:
+            deduction_result = InventoryAgent.deduct_order_stock(
+                items=order.get("items", []),
+                store_id=store_location
             )
-
-            if deduction.get("success"):
-                fulfilled.append(item)
+            if deduction_result.get("success"):
+                fulfilled = [FulfillmentAgent._serialize_item(item) for item in order["items"]]
+                unfulfilled = []
+                inventory_state = {
+                    "deducted": True,
+                    "deducted_at": datetime.utcnow(),
+                    "allocations": deduction_result.get("allocations", []),
+                }
             else:
-                unfulfilled.append(item)
+                fulfilled = []
+                unfulfilled = [FulfillmentAgent._serialize_item(item) for item in order["items"]]
 
-        # Determine overall order status
         if not unfulfilled:
             status = "FULFILLED"
             success = True
@@ -71,9 +63,6 @@ class FulfillmentAgent:
             success = False
             message = "No items fulfilled"
 
-        order_id = order.get("order_id")
-        if isinstance(order_id, str):
-            order_id = ObjectId(order_id)
         update_doc = {
             "user_id": order["user_id"],
             "session_id": order.get("session_id"),
@@ -85,6 +74,7 @@ class FulfillmentAgent:
                 "type": fulfillment_type,
                 "status": status
             },
+            "inventory": inventory_state,
             "status": status.lower(),
             "confirmed_at": datetime.utcnow() if fulfilled else None
         }
